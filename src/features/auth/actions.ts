@@ -64,7 +64,7 @@ export async function signInAction(
   return { ok: true, redirectTo: "/" };
 }
 
-/** Register a new account. Creates a pending profile (no team access yet). */
+/** Register an account and request access to the configured team. */
 export async function signUpAction(
   values: RegisterValues,
 ): Promise<ActionResult> {
@@ -85,6 +85,17 @@ export async function signUpAction(
   });
 
   if (error) {
+    if (
+      error.code === "over_email_send_rate_limit" ||
+      error.message.toLowerCase().includes("email rate limit exceeded")
+    ) {
+      return {
+        ok: false,
+        error:
+          "Supabase has reached its email sending limit. Please wait before retrying, or ask the administrator to configure custom SMTP for account emails.",
+      };
+    }
+
     // Supabase returns a generic message; surface it without leaking internals.
     return { ok: false, error: "Could not create the account. " + error.message };
   }
