@@ -37,6 +37,8 @@ This document records the current implementation and the remaining setup work fo
 | `0003_assignments.sql` | Assignments, recipients, submissions, revisions, files, and reviews |
 | `0004_collaboration.sql` | Reports, discussions, blockers, announcements, notifications, and activity logs |
 | `0005_curriculum_seed.sql` | Idempotent curriculum seed |
+| `0006_pending_member_notification_type.sql` | Notification type for pending member reviews |
+| `0007_pending_member_review.sql` | Create pending memberships at signup, notify admins, and backfill existing profiles |
 
 Apply migrations in order to the Supabase project used by the deployment. The migrations contain RLS policies and triggers; deploying only the frontend does not provision this schema or Storage buckets.
 

@@ -7,6 +7,8 @@ import { z } from "zod";
 
 const emailField = z
   .string()
+  .trim()
+  .toLowerCase()
   .min(1, "Email is required")
   .email("Enter a valid email address")
   .max(254, "Email is too long");

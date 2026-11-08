@@ -26,11 +26,12 @@
 
 ## What was built this session
 
-### Database (migrations 0002–0005)
+### Database (migrations 0002–0007)
 - ✅ `0002_roadmap.sql` — team_settings, phases, weeks, topics, learning_resources, topic_progress + RLS + updated_at triggers
 - ✅ `0003_assignments.sql` — assignments, assignment_recipients, submissions, submission_revisions, submission_files, reviews + RLS + late-status and self-review triggers
 - ✅ `0004_collaboration.sql` — weekly_reports, discussion_threads/posts, blockers/comments, announcements, notifications, activity_logs + RLS + 3 SECURITY DEFINER notification triggers (review/announcement/assignment-publish) + create_notification helper
 - ✅ `0005_curriculum_seed.sql` — idempotent seed: 6 phases, 24 weeks, 83 topics, 12 real resources (official docs only, no invented URLs)
+- ✅ `0006`–`0007` — pending team memberships on signup, admin in-app notifications, and backfill for profiles without a membership
 
 ### Features (41 feature-module files, 23 pages)
 - ✅ Roadmap — viewer (phases/weeks/topics), topic detail, topic progress (start/complete/reset), admin CRUD manager (create/edit/publish/delete phases/weeks/topics + inline resources)
@@ -70,7 +71,7 @@
 6. **Curriculum** is seeded but admin-editable; the seed is idempotent so re-running updates content in place.
 
 ## Next steps (recommended)
-- Apply migrations 0001–0005 to the intended Supabase project and run bootstrap-admin.sql.
+- Apply migrations 0001–0007 to the intended Supabase project and run bootstrap-admin.sql.
 - Create the `submissions` + `avatars` Storage buckets with D7 policies to enable file uploads.
 - Wire Supabase Realtime for live notifications.
 - Add the `/settings` admin page if application-level settings are required.

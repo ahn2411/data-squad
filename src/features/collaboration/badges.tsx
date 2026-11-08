@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   RefreshCw,
   AlertCircle,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -109,6 +110,11 @@ const notificationConfig: Record<
   new_announcement: { icon: Megaphone, label: "Announcement", tone: "teal" },
   weekly_report_due: { icon: CalendarClock, label: "Weekly report due", tone: "warning" },
   blocker_updated: { icon: AlertCircle, label: "Blocker updated", tone: "navy" },
+  pending_member_review: {
+    icon: Users,
+    label: "Member awaiting review",
+    tone: "warning",
+  },
 };
 
 export function notificationIcon(type: NotificationType): LucideIcon {

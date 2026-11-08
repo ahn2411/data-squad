@@ -37,7 +37,7 @@ The sidebar uses a server-provided collapsed state stored in a cookie, so its in
 
 ## Database
 
-Migrations run in order from `0001_initial_schema.sql` through `0005_curriculum_seed.sql`. They define membership, curriculum, assignments and submissions, collaboration/reporting, and seeded curriculum data. RLS policies scope records to active memberships and ownership/roles. Triggers enforce invariants that policies alone cannot safely express, including immutable submission identity, late status, review outcomes, and non-self-review.
+Migrations run in order from `0001_initial_schema.sql` through `0007_pending_member_review.sql`. They define membership, curriculum, assignments and submissions, collaboration/reporting, seeded curriculum data, and pending-member review notifications. RLS policies scope records to active memberships and ownership/roles. Triggers enforce invariants that policies alone cannot safely express, including immutable submission identity, late status, review outcomes, and non-self-review.
 
 Apply migrations to the intended Supabase project before deploying the app. `src/types/database.ts` is the application type model; regenerate it from the target project when the schema changes, then review generated changes against the codebase.
 

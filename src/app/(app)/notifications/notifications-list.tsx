@@ -65,8 +65,8 @@ export function NotificationsList({ notifications }: NotificationsListProps) {
           You&apos;re all caught up
         </p>
         <p className="mt-1 text-[12px] text-muted-foreground">
-          Notifications about reviews, announcements, and new assignments will
-          appear here.
+          Notifications about access reviews, submissions, announcements, and
+          assignments will appear here.
         </p>
       </div>
     );

@@ -492,7 +492,8 @@ export type BlockerStatus = "open" | "being_addressed" | "resolved";
 export type PublicationStatus = "draft" | "published" | "archived";
 export type NotificationType =
   | "new_assignment" | "deadline_approaching" | "submission_reviewed"
-  | "revision_requested" | "new_announcement" | "weekly_report_due" | "blocker_updated";
+  | "revision_requested" | "new_announcement" | "weekly_report_due" | "blocker_updated"
+  | "pending_member_review";
 
 // ────────────────────────────── Row aliases ──────────────────────────────
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];

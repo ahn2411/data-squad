@@ -15,7 +15,7 @@ import {
 } from "./schemas";
 
 export type ActionResult =
-  | { ok: true; redirectTo?: string }
+  | { ok: true; redirectTo?: string; notice?: string }
   | { ok: false; error: string };
 
 function notConfigured(): ActionResult {
@@ -48,6 +48,15 @@ export async function signInAction(
   });
 
   if (error) {
+    if (
+      error.code === "email_not_confirmed" ||
+      error.message.toLowerCase().includes("email not confirmed")
+    ) {
+      return {
+        ok: false,
+        error: "Please confirm your email using the link we sent before signing in.",
+      };
+    }
     return { ok: false, error: "Incorrect email or password." };
   }
 
@@ -67,7 +76,7 @@ export async function signUpAction(
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
@@ -80,8 +89,18 @@ export async function signUpAction(
     return { ok: false, error: "Could not create the account. " + error.message };
   }
 
-  // With email confirmation off, the user is now signed in but has no
-  // team_members row — the root resolver sends them to pending-approval.
+  // With email confirmation enabled, Supabase creates the account but does
+  // not create a session until the user follows the email link.
+  if (!data.session) {
+    return {
+      ok: true,
+      redirectTo: "/login",
+      notice: "Account created. Check your email to confirm it before signing in.",
+    };
+  }
+
+  // The database auth trigger creates a pending team membership for the
+  // registered user. The root resolver sends that session to pending-approval.
   revalidatePath("/", "layout");
   return { ok: true, redirectTo: "/" };
 }

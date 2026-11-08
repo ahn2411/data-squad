@@ -28,8 +28,8 @@ async function requireActive(): Promise<
  * user_id = auth.uid(); we also verify ownership for a clean error.
  *
  * NOTE: Notifications are NEVER inserted from actions — they come only from
- * the DB triggers (notify_on_review, notify_on_announcement,
- * notify_on_assignment_publish). This action only marks-read.
+ * DB triggers (including pending-member, review, announcement, and assignment
+ * events). This action only marks-read.
  */
 export async function markNotificationReadAction(
   id: string,

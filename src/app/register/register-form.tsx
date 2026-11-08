@@ -40,6 +40,7 @@ export function RegisterForm() {
     startTransition(async () => {
       const res = await signUpAction(values);
       if (res.ok && res.redirectTo) {
+        if (res.notice) toast.success(res.notice);
         router.push(res.redirectTo);
         router.refresh();
       } else if (!res.ok) {
