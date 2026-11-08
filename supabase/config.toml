@@ -1,0 +1,40 @@
+# Supabase CLI project config.
+# Docs: https://supabase.com/docs/guides/local-development
+
+project_id = "data-science-squad-hub"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/**"]
+jwt_expiry = 3600
+enable_signup = true
+enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+# Admin approval (FR-A.8) is the real membership gate, so email confirmation
+# on signup is off by default. Flip to true in the dashboard if you prefer
+# double opt-in.
+enable_confirmations = false
+
+[storage]
+enabled = true
+file_size_limit = "25MiB"
