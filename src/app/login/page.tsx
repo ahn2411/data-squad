@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { AuthShell } from "@/components/auth-shell";
 import { isSupabaseConfigured } from "@/lib/supabase/configured";
@@ -24,7 +25,9 @@ export default function LoginPage() {
         </>
       }
     >
-      <LoginForm />
+      <Suspense fallback={null}>
+        <LoginForm />
+      </Suspense>
     </AuthShell>
   );
 }
