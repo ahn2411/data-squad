@@ -16,11 +16,13 @@ import {
 import { signOutAction } from "@/features/auth/actions";
 import type { TeamRole } from "@/types/database";
 import { initials } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 interface UserMenuProps {
   name: string | null;
   email: string;
   role: TeamRole;
+  collapsed?: boolean;
 }
 
 const roleLabels: Record<TeamRole, string> = {
@@ -29,7 +31,7 @@ const roleLabels: Record<TeamRole, string> = {
   member: "Member",
 };
 
-export function UserMenu({ name, email, role }: UserMenuProps) {
+export function UserMenu({ name, email, role, collapsed = false }: UserMenuProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -45,23 +47,29 @@ export function UserMenu({ name, email, role }: UserMenuProps) {
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          className="h-auto w-full justify-start gap-2.5 px-2 py-1.5 text-left hover:bg-sidebar-accent/60"
-          aria-label="Open user menu"
+          className={cn(
+            "h-auto w-full py-1.5 hover:bg-sidebar-accent/60",
+            collapsed ? "justify-center px-0" : "justify-start gap-2.5 px-2 text-left",
+          )}
+          aria-label={collapsed ? `Open user menu for ${name ?? email}` : "Open user menu"}
+          title={collapsed ? name ?? email : undefined}
         >
           <Avatar className="size-7 border border-border">
             <AvatarFallback className="bg-primary/10 text-[11px] font-medium text-primary">
               {initials(name ?? email)}
             </AvatarFallback>
           </Avatar>
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-[13px] font-medium text-sidebar-foreground">
-              {name ?? email}
+          {!collapsed ? (
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-[13px] font-medium text-sidebar-foreground">
+                {name ?? email}
+              </span>
+              <span className="truncate text-[11px] text-muted-foreground">
+                {roleLabels[role]}
+              </span>
             </span>
-            <span className="truncate text-[11px] text-muted-foreground">
-              {roleLabels[role]}
-            </span>
-          </span>
-          <ChevronUp className="size-3.5 text-muted-foreground" />
+          ) : null}
+          {!collapsed ? <ChevronUp className="size-3.5 text-muted-foreground" /> : null}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

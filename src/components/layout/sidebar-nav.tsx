@@ -7,21 +7,27 @@ import type { NavSection } from "./sidebar-nav-data";
 
 interface SidebarNavProps {
   sections: NavSection[];
+  collapsed?: boolean;
   /** Called after a nav click — used to close the mobile sheet. */
   onNavigate?: () => void;
 }
 
-export function SidebarNav({ sections, onNavigate }: SidebarNavProps) {
+export function SidebarNav({ sections, collapsed = false, onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-col gap-5 px-3 py-4" aria-label="Main">
+    <nav
+      className={cn("flex flex-col py-4", collapsed ? "gap-3 px-1.5" : "gap-5 px-3")}
+      aria-label="Main"
+    >
       {sections.map((section) => (
-        <div key={section.title}>
-          <p className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-            {section.title}
-          </p>
-          <ul className="flex flex-col gap-0.5">
+        <div key={section.title} className="min-w-0">
+          {!collapsed ? (
+            <p className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+              {section.title}
+            </p>
+          ) : null}
+          <ul className={cn("flex flex-col gap-0.5", collapsed && "items-center")}>
             {section.items.map((item) => {
               const active =
                 item.built &&
@@ -33,15 +39,22 @@ export function SidebarNav({ sections, onNavigate }: SidebarNavProps) {
                 return (
                   <li key={item.href}>
                     <span
-                      className="flex cursor-not-allowed items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-muted-foreground/45"
+                      className={cn(
+                        "flex cursor-not-allowed items-center rounded-md py-2 text-[13px] text-muted-foreground/45",
+                        collapsed ? "justify-center px-2" : "gap-2.5 px-2.5",
+                      )}
                       aria-disabled="true"
-                      title="Available in a later phase"
+                      title={collapsed ? `${item.label} — Available in a later phase` : undefined}
                     >
                       <Icon className="size-4 shrink-0" />
-                      <span className="truncate">{item.label}</span>
-                      <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
-                        Soon
-                      </span>
+                      {!collapsed ? (
+                        <>
+                          <span className="truncate">{item.label}</span>
+                          <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+                            Soon
+                          </span>
+                        </>
+                      ) : null}
                     </span>
                   </li>
                 );
@@ -53,8 +66,11 @@ export function SidebarNav({ sections, onNavigate }: SidebarNavProps) {
                     href={item.href}
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
+                    aria-label={item.label}
+                    title={collapsed ? item.label : undefined}
                     className={cn(
-                      "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors duration-150",
+                      "group relative flex min-w-0 items-center rounded-md py-2 text-[13px] font-medium transition-colors duration-150",
+                      collapsed ? "justify-center px-2" : "gap-2.5 px-2.5",
                       active
                         ? "bg-sidebar-accent text-sidebar-accent-foreground"
                         : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
@@ -74,7 +90,7 @@ export function SidebarNav({ sections, onNavigate }: SidebarNavProps) {
                         active ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
                       )}
                     />
-                    <span className="truncate">{item.label}</span>
+                    {!collapsed ? <span className="truncate">{item.label}</span> : null}
                   </Link>
                 </li>
               );

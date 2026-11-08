@@ -43,6 +43,7 @@
     "examples",
     "skills",
     "tests",
-    "mini-services"
+    "mini-services",
+    "github-upload-ready"
   ]
 }

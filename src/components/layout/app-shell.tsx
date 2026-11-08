@@ -38,6 +38,7 @@ interface AppShellProps {
     email: string;
     role: TeamRole;
   };
+  initialCollapsed: boolean;
   children: React.ReactNode;
 }
 
@@ -55,34 +56,26 @@ function pageTitle(pathname: string): string {
   }
 }
 
-export function AppShell({ user, children }: AppShellProps) {
+export function AppShell({ user, initialCollapsed, children }: AppShellProps) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(initialCollapsed);
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
-  // Persist collapse preference.
-  React.useEffect(() => {
-    const stored = localStorage.getItem("sidebar-collapsed");
-    if (stored === "true") setCollapsed(true);
-  }, []);
-  React.useEffect(() => {
-    localStorage.setItem("sidebar-collapsed", String(collapsed));
-  }, [collapsed]);
-
-  const sidebarInner = (
+  const renderSidebar = (isCollapsed: boolean) => (
     <div className="flex h-full flex-col">
       <div
         className={cn(
           "flex h-14 shrink-0 items-center border-b border-sidebar-border",
-          collapsed ? "justify-center px-2" : "px-4",
+          isCollapsed ? "justify-center px-2" : "px-4",
         )}
       >
-        <Logo showWordmark={!collapsed} />
+        <Logo showWordmark={!isCollapsed} />
       </div>
 
       <ScrollArea className="flex-1">
         <SidebarNav
           sections={visibleSectionsFor(user.role)}
+          collapsed={isCollapsed}
           onNavigate={() => setMobileOpen(false)}
         />
       </ScrollArea>
@@ -93,6 +86,7 @@ export function AppShell({ user, children }: AppShellProps) {
           name={user.name}
           email={user.email}
           role={user.role}
+          collapsed={isCollapsed}
         />
       </div>
     </div>
@@ -103,17 +97,21 @@ export function AppShell({ user, children }: AppShellProps) {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden md:flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-150 ease-out",
+          "relative hidden flex-none flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 ease-in-out md:flex",
           collapsed ? "w-14" : "w-60",
         )}
       >
-        {sidebarInner}
+        {renderSidebar(collapsed)}
         <button
           type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          className="absolute left-0 top-[3.25rem] z-20 hidden h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground md:flex"
-          style={{ left: collapsed ? "3.5rem" : "15rem" }}
+          onClick={() => {
+            const nextCollapsed = !collapsed;
+            setCollapsed(nextCollapsed);
+            document.cookie = `sidebar-collapsed=${nextCollapsed}; path=/; max-age=31536000; samesite=lax`;
+          }}
+          className="absolute right-0 top-[3.25rem] z-20 hidden h-5 w-5 translate-x-1/2 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground md:flex"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
         >
           {collapsed ? (
             <PanelLeft className="size-3" />
@@ -143,7 +141,7 @@ export function AppShell({ user, children }: AppShellProps) {
               className="w-72 border-sidebar-border bg-sidebar p-0"
             >
               <SheetTitle className="sr-only">Navigation</SheetTitle>
-              {sidebarInner}
+              {renderSidebar(false)}
             </SheetContent>
           </Sheet>
 

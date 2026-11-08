@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import {
   requireActiveMember,
   type ActiveSession,
@@ -25,9 +26,11 @@ export default async function AppLayout({
   }
 
   const profile = session.profile;
+  const cookieStore = await cookies();
 
   return (
     <AppShell
+      initialCollapsed={cookieStore.get("sidebar-collapsed")?.value === "true"}
       user={{
         name: profile?.full_name ?? null,
         email: session.email,
