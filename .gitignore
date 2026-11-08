@@ -8,6 +8,7 @@
 /out/
 /build/
 /dist/
+/github-upload-ready/
 
 # Local environment files
 .env*
@@ -24,6 +25,7 @@ bun-debug.log*
 .turbo/
 .vercel/
 /coverage/
+/supabase/.temp/
 
 # TypeScript build output
 *.tsbuildinfo
