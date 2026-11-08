@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -46,6 +47,7 @@ export default function RootLayout({
           {children}
           <Toaster richColors closeButton position="top-right" />
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
