@@ -11,14 +11,14 @@
 --   * Creates the single launch team (idempotent).
 --   * Promotes your profile to an active admin team member.
 --
--- >>> Replace ahsan747708@gmail.com below with your registered email. <<<
+-- >>> Replace YOUR_EMAIL@example.com below with your registered email. <<<
 -- ============================================================================
 
 do $$
 declare
   v_team_id uuid;
   v_user_id uuid;
-  v_email   text := 'ahsan747708@gmail.com';
+  v_email   text := 'YOUR_EMAIL@example.com';
 begin
   -- 1. Team
   insert into public.teams (name, slug, description)

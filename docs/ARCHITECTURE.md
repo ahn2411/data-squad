@@ -1,130 +1,51 @@
 # Architecture
 
-How the Phase 1 + Phase 2 codebase is laid out and how the pieces fit together. Phase 1 delivered the foundation (project scaffold, Supabase wiring, design tokens, the shell). Phase 2 delivered authentication and membership. Everything else is stubbed in the nav but not built — see [DEVELOPMENT_ROADMAP.md](./DEVELOPMENT_ROADMAP.md).
+Squad Hub is a Next.js App Router application backed by Supabase Auth and Postgres. The initial foundation and membership flows are in place, along with the roadmap, assignment/review, progress, reporting, discussion, blocker, announcement, and notification features.
 
-## Folder structure
+## Project layout
 
-Feature-based under `src/features/{auth,members,profile}`. Each feature has `actions.ts` (Server Actions), `schemas.ts` (Zod), and (for members) `queries.ts`. UI lives in `src/app` and `src/components`.
-
-```
+```text
 src/
-├── middleware.ts                         # thin wrapper around updateSession
-├── app/
-│   ├── layout.tsx                        # root layout: Inter + JetBrains Mono, ThemeProvider, Toaster
-│   ├── globals.css                       # Tailwind v4 + design tokens (oklch)
-│   ├── page.tsx                          # root resolver — redirects by session state
-│   ├── login/{page.tsx, login-form.tsx}
-│   ├── register/{page.tsx, register-form.tsx}
-│   ├── forgot-password/{page.tsx, forgot-form.tsx}
-│   ├── reset-password/{page.tsx, reset-form.tsx}
-│   ├── pending-approval/page.tsx         # gate screen for no-membership / pending / suspended / removed
-│   ├── api/route.ts
-│   └── (app)/                            # route group — layout gates on requireActiveMember
-│       ├── layout.tsx                    # AppShell, role-filtered sidebar
-│       ├── dashboard/page.tsx            # member overview
-│       ├── profile/{page.tsx, profile-form.tsx}
-│       └── admin/members/{page.tsx, members-table.tsx}
-├── components/
-│   ├── layout/{app-shell.tsx, sidebar-nav.tsx, sidebar-nav-data.tsx, user-menu.tsx}
-│   ├── ui/                               # shadcn/ui New York primitives
-│   ├── brand/logo.tsx
-│   ├── theme-{provider,toggle}.tsx
-│   ├── auth-shell.tsx
-│   ├── not-configured-screen.tsx         # rendered when env vars are missing
-│   ├── page-header.tsx
-│   ├── sign-out-button.tsx
-│   └── status-pill.tsx                   # RoleBadge + MembershipBadge
-├── features/
-│   ├── auth/{actions.ts, schemas.ts, session.ts}
-│   ├── members/{actions.ts, queries.ts, schemas.ts}
-│   └── profile/{actions.ts, schemas.ts}
-├── hooks/{use-mobile.ts, use-toast.ts}
-├── lib/
-│   ├── format.ts                         # date / number helpers
-│   ├── utils.ts                          # cn() tailwind-merge
-│   ├── db.ts                             # Prisma client (present, not used by Phase 2)
-│   └── supabase/{client.ts, server.ts, middleware.ts, configured.ts}
-└── types/database.ts                     # hand-written Phase 1+2 types — regenerate via supabase:types
+├── app/                 # routes, layouts, and page-level UI
+│   └── (app)/            # authenticated workspace and admin routes
+├── components/           # shared shell, navigation, brand, and UI primitives
+├── features/             # domain actions, queries, and schemas
+├── hooks/                # shared client hooks
+├── lib/supabase/         # browser/server clients and session middleware
+├── middleware.ts         # refreshes Supabase sessions
+└── types/database.ts     # TypeScript database model
+supabase/
+├── migrations/           # ordered schema, RLS, trigger, and seed migrations
+└── seed/                 # bootstrap admin SQL
 ```
 
-## The Supabase client pattern
+Feature modules are grouped under `src/features`: auth, members, profile, roadmap, assignments, submissions, progress, reports, discussions, blockers, announcements, and notifications. Server Actions validate input and perform mutations; queries use the server Supabase client so database RLS sees the signed-in user.
 
-Three clients in `src/lib/supabase/`, all driven by the publishable (anon) key:
+## Authentication and authorization
 
-| File | Role |
-|---|---|
-| `client.ts` | Browser client via `createBrowserClient(url, anonKey)`. Throws if env vars are missing. |
-| `server.ts` | Server client via `createServerClient(url, anonKey, { cookies })`. Bound to the request cookies so RLS enforces as the acting user. The `setAll` callback swallows errors when called from a Server Component (the middleware refreshes sessions instead). |
-| `middleware.ts` | `updateSession(request)` — refreshes the Supabase auth session on every navigation and guards protected routes. Public routes (`/login`, `/register`, `/forgot-password`, `/reset-password`, `/pending-approval`) are reachable without a session; everything else requires an authenticated user and otherwise redirects to `/login?redirect=...`. Membership-status gating (pending/suspended/removed) is handled in the `(app)` layout, not here, to keep the middleware fast and avoid a per-request database query. |
-| `configured.ts` | Reads `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. `isSupabaseConfigured()` returns false when either is missing. The root page and the `(app)` layout check this and render `NotConfiguredScreen` instead of crashing on an empty URL. Also exports `SupabaseNotConfiguredError`. |
+`src/features/auth/session.ts` resolves the signed-in user and active team membership. The `(app)` layout calls `requireActiveMember()` before rendering workspace pages and filters navigation by role. Admin pages and mutations perform role checks in addition to database RLS.
 
-The service-role key is **never** imported by browser code and is **not** re-exported from `configured.ts`. It is read directly from `process.env.SUPABASE_SERVICE_ROLE_KEY` only in privileged server paths.
+The browser and server Supabase clients use the public publishable key. The server client is bound to request cookies. The service-role key must remain server-only and is used only in privileged server paths. Row-level security is the database authorization boundary; UI visibility is not a substitute for RLS.
 
-`src/middleware.ts` is a one-line wrapper that calls `updateSession`. The matcher excludes static assets, image files, and Next internals.
+## Routes and feature areas
 
-## Routing
+- Authentication: `/login`, `/register`, `/forgot-password`, `/reset-password`, `/pending-approval`.
+- Workspace: `/dashboard`, `/profile`, `/roadmap`, `/assignments`, `/submissions`, `/weekly-reports`, `/discussions`, `/blockers`, `/announcements`, `/notifications`.
+- Administration: `/admin/members`, `/admin/roadmap`, `/admin/assignments`, `/admin/announcements`.
 
-- **`/`** — the root resolver (`src/app/page.tsx`). It renders `NotConfiguredScreen` when Supabase is missing, otherwise calls `getSessionContext()` and redirects by status: `unauthenticated` → `/login`, `active` → `/dashboard`, `no-membership` / `pending` → `/pending-approval`, `suspended` → `/pending-approval?reason=suspended`, `removed` → `/pending-approval?reason=removed`. It renders no UI of its own.
-- **Auth pages** — `/login`, `/register`, `/forgot-password`, `/reset-password`, `/pending-approval`. Standalone (not inside the `(app)` group). If a signed-in user hits `/login` or `/register`, the middleware bounces them to `/`.
-- **App pages** — live in the `(app)` route group whose layout (`src/app/(app)/layout.tsx`) calls `requireActiveMember()` and renders the `AppShell` with a role-filtered sidebar.
+The sidebar uses a server-provided collapsed state stored in a cookie, so its initial width is stable during route navigation. Desktop content and sidebar use a flex layout; the mobile navigation renders separately as a sheet. The shell also loads notification count and recent items for the bell.
 
-Phase 2 routes that actually resolve:
+## Database
 
-| Route | Page | Who |
-|---|---|---|
-| `/dashboard` | Member overview: role, status, team, "member since", getting-started links. | Any active member. |
-| `/profile` | Editable profile form (full name, username, bio, GitHub username + URL, timezone). | Any active member. |
-| `/admin/members` | Members table — approve, suspend, reinstate, remove, change role, invite. | Admin + leader (leader sees but admin-only actions are disabled). |
+Migrations run in order from `0001_initial_schema.sql` through `0005_curriculum_seed.sql`. They define membership, curriculum, assignments and submissions, collaboration/reporting, and seeded curriculum data. RLS policies scope records to active memberships and ownership/roles. Triggers enforce invariants that policies alone cannot safely express, including immutable submission identity, late status, review outcomes, and non-self-review.
 
-The sidebar (`sidebar-nav-data.tsx`) lists the full intended IA (Roadmap, Assignments, Submissions, Weekly reports, GitHub, Discussions, Blockers, Announcements, Settings). Items not yet built render muted with a "Soon" tag — they are visible so the structure is clear without faking functionality.
+Apply migrations to the intended Supabase project before deploying the app. `src/types/database.ts` is the application type model; regenerate it from the target project when the schema changes, then review generated changes against the codebase.
 
-## Server Actions vs client components
+## Known external setup and limitations
 
-Every mutation in Phase 2 is a `"use server"` Server Action validated with Zod:
-
-- `src/features/auth/actions.ts` — `signInAction`, `signUpAction`, `requestPasswordResetAction`, `updatePasswordAction`, `signOutAction`.
-- `src/features/members/actions.ts` — `approveMemberAction`, `suspendMemberAction`, `reinstateMemberAction`, `removeMemberAction`, `changeRoleAction`, `inviteMemberAction`. Each starts with `requireAdmin()` which re-resolves the session via `getSessionContext()` and rejects non-admin callers — never trusts a client-supplied user id or role.
-- `src/features/profile/actions.ts` — `updateProfileAction`. Restricts the editable field set (role, email, membership are deliberately excluded).
-
-Client components (`*-form.tsx`, `members-table.tsx`, the shell) exist only where interactivity requires them. They use React Hook Form with the shared Zod schemas for instant client feedback; the same schemas run again on the server in the action, so client validation is UX only — the server is authoritative.
-
-## The session model
-
-`getSessionContext()` (`src/features/auth/session.ts`) is the single source of truth for layout gating and role-based redirects. It returns a typed `SessionContext` discriminated union:
-
-| `status` | Meaning | What the layout does |
-|---|---|---|
-| `not-configured` | Supabase env vars missing. | Render `NotConfiguredScreen`. |
-| `unauthenticated` | No session. | Redirect `/login`. |
-| `no-membership` | Signed in, no `team_members` row. | Redirect `/pending-approval`. |
-| `pending` | `pending_invite` or `pending_approval`. | Redirect `/pending-approval`. |
-| `suspended` | `membership_status='suspended'`. | Redirect `/pending-approval?reason=suspended`. |
-| `removed` | `membership_status='removed'`. | Redirect `/pending-approval?reason=removed`. |
-| `active` | `membership_status='active'`. | Pass the `ActiveSession` (userId, email, profile, membership + team) to the layout. |
-
-`requireActiveMember()` wraps `getSessionContext()` and returns the `ActiveSession` (or redirects). `requireRole(session, ["admin","leader"])` is a thin additional guard used by `/admin/members` — it redirects members back to `/dashboard`.
-
-## Design tokens
-
-`src/app/globals.css` defines the tokens. One navy primary, one teal accent, slate neutrals, plus restrained chart colors:
-
-- Primary: `oklch(0.35 0.105 262)` — deep navy. Primary-foreground near-white.
-- Teal accent: `oklch(0.6 0.118 184)`, used sparingly for progress and success.
-- Surfaces use subtle off-whites (light) and near-black with a faint blue tint (dark). Pure `#fff` / `#000` are never used for large surfaces.
-- Radius: `--radius: 0.5rem` (8px controls); `xl = 12px` containers.
-- Type scale adds 13px (`--text-13`) and 32px (`--text-32`).
-- Fonts: Inter (sans), JetBrains Mono (mono), loaded via `next/font/google` and exposed as CSS variables in the root layout.
-- Light/dark via `next-themes` (`attribute="class"`, `defaultTheme="system"`, `enableSystem`). The `dark` variant is wired as `&:is(.dark *)`.
-
-## What is NOT built yet
-
-Phase 2 ships auth, membership, the workspace shell, the dashboard, the profile editor, and the members admin table. The following are listed in the sidebar but are not implemented — they arrive in later phases (see [DEVELOPMENT_ROADMAP.md](./DEVELOPMENT_ROADMAP.md)):
-
-- Curriculum: phases, weeks, topics, learning resources, topic progress.
-- Assignments and task assignments.
-- Submissions, submission files (Storage), reviews, submission revisions.
-- Progress tracking (the `individual_progress`, `team_progress`, `overdue_assignments` database views) and the Recharts dashboards.
-- Weekly reports, learning blockers, announcements, notifications, activity logs.
-- Discussions.
-- GitHub sync (profile links are stored; nothing pulls activity).
-- Storage uploads (avatars and submission files).
+- Submission file metadata is supported, but actual upload/download requires a private `submissions` Storage bucket and matching Storage policies.
+- Avatar uploads require an `avatars` bucket; initials are shown without one.
+- Password reset and invite email delivery depend on Supabase Auth email configuration.
+- Notifications are loaded on page requests; realtime delivery is not wired.
+- GitHub usernames and URLs are stored as profile/submission/report links; there is no GitHub API sync or separate GitHub page.
+- Admin application settings are not implemented.

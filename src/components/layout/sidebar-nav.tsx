@@ -2,8 +2,40 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  ClipboardList,
+  FileText,
+  GitBranch,
+  Inbox,
+  LayoutDashboard,
+  Map,
+  Megaphone,
+  MessageSquare,
+  Settings,
+  TriangleAlert,
+  User,
+  Users,
+  Bell,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { NavSection } from "./sidebar-nav-data";
+import type { NavIconName, NavSection } from "./sidebar-nav-data";
+
+const navIcons: Record<NavIconName, LucideIcon> = {
+  LayoutDashboard,
+  User,
+  Users,
+  Map,
+  ClipboardList,
+  Inbox,
+  FileText,
+  GitBranch,
+  MessageSquare,
+  TriangleAlert,
+  Megaphone,
+  Bell,
+  Settings,
+};
 
 interface SidebarNavProps {
   sections: NavSection[];
@@ -33,7 +65,7 @@ export function SidebarNav({ sections, collapsed = false, onNavigate }: SidebarN
                 item.built &&
                 (pathname === item.href ||
                   pathname.startsWith(item.href + "/"));
-              const Icon = item.icon;
+              const Icon = navIcons[item.icon];
 
               if (!item.built) {
                 return (

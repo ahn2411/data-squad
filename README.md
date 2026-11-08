@@ -1,6 +1,6 @@
 # Data Science Squad Hub
 
-A private collaborative learning platform for a six-member Data Science squad — authentication, membership, and the workspace shell are live; the 24-week roadmap, assignments, and submissions ship in later phases.
+A private collaborative learning platform for a six-member Data Science squad — a full 24-week curriculum, assignments, submissions, peer review, progress tracking, weekly reports, discussions, blockers, announcements, and notifications, all backed by Supabase Postgres with Row-Level Security.
 
 > From confused to competent.
 
@@ -47,13 +47,18 @@ A private collaborative learning platform for a six-member Data Science squad �
    | `SUPABASE_SERVICE_ROLE_KEY` | Server-only. Never prefix with `NEXT_PUBLIC_`. Used only for privileged bootstrap paths. |
    | `NEXT_PUBLIC_SITE_URL` | The app base URL used for auth email redirects. Local dev: `http://localhost:3000`. |
 
-4. Apply the migration. For a linked project:
+4. Apply the migrations (run them in order). For a linked project:
 
    ```bash
    supabase db push
    ```
 
-   Or open the Supabase SQL editor and paste the contents of `supabase/migrations/0001_initial_schema.sql`, then run it. This creates the `teams`, `profiles`, `team_members`, and `invitations` tables, all enums, triggers, RLS helper functions, and RLS policies.
+   Or open the Supabase SQL editor and run each file in `supabase/migrations/` in numeric order (`0001` → `0005`). They build the full schema:
+   - `0001_initial_schema.sql` — teams, profiles, team_members, invitations + enums + RLS helpers
+   - `0002_roadmap.sql` — phases, weeks, topics, learning_resources, topic_progress, team_settings + RLS
+   - `0003_assignments.sql` — assignments, recipients, submissions, revisions, files, reviews + RLS + self-review guard
+   - `0004_collaboration.sql` — weekly_reports, discussions, blockers, announcements, notifications, activity_logs + RLS + notification triggers
+   - `0005_curriculum_seed.sql` — the full 24-week curriculum (6 phases, 24 weeks, 83 topics, 12 real resources). Idempotent; re-running updates content in place.
 
 5. Generate the authoritative TypeScript types (the hand-written `src/types/database.ts` is a placeholder; replace it with the real generated types):
 
@@ -97,22 +102,23 @@ Email confirmation is **disabled by default**. Admin approval is the gate that a
 
 1. Push the repo to GitHub/GitLab and import it into Vercel.
 2. Add the same four env vars from `.env.example` in the Vercel project settings.
-3. Point Vercel at your **production** Supabase project (separate from the dev project). Apply the migration against it: `supabase db push` (with the production project linked) or paste `0001_initial_schema.sql` into the production SQL editor.
+3. Point Vercel at your **production** Supabase project (separate from the dev project). Apply all migrations (`0001`–`0005`) against it: `supabase db push` (with the production project linked) or paste each SQL file into the production SQL editor in order. Then run `supabase/seed/bootstrap-admin.sql`.
 4. Bootstrap the first admin against the production database using `supabase/seed/bootstrap-admin.sql`.
 5. Deploy. The build uses `next build`; no special build step is required.
 
 ## Project structure
 
-The app is a standard Next.js 16 App Router project with a feature-based `src/features/{auth,members,profile}` layout, three Supabase clients in `src/lib/supabase/` (browser, server, middleware), a `(app)` route group gated by `requireActiveMember`, and standalone auth pages. The hand-written `src/types/database.ts` mirrors the Phase 1+2 schema and is meant to be replaced by generated types. See `docs/ARCHITECTURE.md` for the full tree, the client pattern, routing, and the session model.
+The app is a Next.js 16 App Router project with a feature-based `src/features/{auth,members,profile,roadmap,assignments,submissions,progress,reports,discussions,blockers,announcements,notifications}` layout, three Supabase clients in `src/lib/supabase/` (browser, server, middleware), a `(app)` route group gated by `requireActiveMember`, and standalone auth pages. The hand-written `src/types/database.ts` mirrors the full schema (migrations 0001–0004) and is meant to be replaced by generated types. See `docs/ARCHITECTURE.md` for the full tree, the client pattern, routing, and the session model, and `docs/IMPLEMENTATION_CHECKLIST.md` for the per-feature status.
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| `docs/ARCHITECTURE.md` | Folder structure, Supabase client pattern, routing, Server Actions vs client components, session model, design tokens, Phase 2 scope. |
-| `docs/DATABASE_SCHEMA.md` | Tables, columns, constraints, enums, triggers, helper functions, and relationships from `0001_initial_schema.sql`. |
+| `docs/ARCHITECTURE.md` | Folder structure, Supabase client pattern, routing, Server Actions vs client components, session model, design tokens. |
+| `docs/DATABASE_SCHEMA.md` | Tables, columns, constraints, enums, triggers, helper functions, and relationships. |
 | `docs/SECURITY.md` | RLS as the authorization layer, key management, per-table policies, the membership gate, denial-test recipes. |
-| `docs/DEVELOPMENT_ROADMAP.md` | Phase 1 and 2 (done) plus the remaining six phases with their migrations and tables. |
+| `docs/DEVELOPMENT_ROADMAP.md` | Phase plan with migrations and tables per phase. |
+| `docs/IMPLEMENTATION_CHECKLIST.md` | Audit findings + per-feature status (done/partial/not-started) + known limitations. |
 
 ## Useful scripts
 

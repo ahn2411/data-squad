@@ -59,16 +59,14 @@ export function UserMenu({ name, email, role, collapsed = false }: UserMenuProps
               {initials(name ?? email)}
             </AvatarFallback>
           </Avatar>
-          {!collapsed ? (
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-[13px] font-medium text-sidebar-foreground">
-                {name ?? email}
-              </span>
-              <span className="truncate text-[11px] text-muted-foreground">
-                {roleLabels[role]}
-              </span>
+          {!collapsed ? <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-[13px] font-medium text-sidebar-foreground">
+              {name ?? email}
             </span>
-          ) : null}
+            <span className="truncate text-[11px] text-muted-foreground">
+              {roleLabels[role]}
+            </span>
+          </span> : null}
           {!collapsed ? <ChevronUp className="size-3.5 text-muted-foreground" /> : null}
         </Button>
       </DropdownMenuTrigger>
