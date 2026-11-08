@@ -47,8 +47,11 @@ export default async function AppLayout({
   let unreadCount = 0;
   let recentNotifications: BellNotification[] = [];
   try {
-    unreadCount = await getUnreadCount();
-    const recent = await getRecentNotifications(5);
+    const [count, recent] = await Promise.all([
+      getUnreadCount(),
+      getRecentNotifications(5),
+    ]);
+    unreadCount = count;
     recentNotifications = recent.map((n) => ({
       id: n.id,
       type: n.type,

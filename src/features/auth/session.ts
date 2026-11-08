@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/configured";
@@ -39,75 +40,80 @@ export type SessionContext =
  * Resolves the full auth + membership context for the current request.
  * Single source of truth for layout gating and role-based redirects.
  */
-export async function getSessionContext(): Promise<SessionContext> {
-  if (!isSupabaseConfigured()) {
-    return { status: "not-configured" };
-  }
+export const getSessionContext = cache(
+  async function getSessionContext(): Promise<SessionContext> {
+    if (!isSupabaseConfigured()) {
+      return { status: "not-configured" };
+    }
 
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  if (!user) {
-    return { status: "unauthenticated" };
-  }
+    if (!user) {
+      return { status: "unauthenticated" };
+    }
 
-  const email = user.email ?? "";
+    const email = user.email ?? "";
 
-  // Profile + membership in parallel-ish (supabase js is sequential per call,
-  // but these are independent reads).
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
+    // These reads are independent; run them concurrently and reuse the result
+    // across the layout, page, and notification queries for this render request.
+    const [profileResult, membershipResult] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single(),
+      supabase
+        .from("team_members")
+        .select("*, teams(*)")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    ]);
+    const { data: profile } = profileResult;
+    const { data: membership } = membershipResult;
 
-  const { data: membership } = await supabase
-    .from("team_members")
-    .select("*, teams(*)")
-    .eq("user_id", user.id)
-    .maybeSingle();
+    if (!membership) {
+      return {
+        status: "no-membership",
+        userId: user.id,
+        email,
+        profile,
+        membership: null,
+        membershipStatus: null,
+      };
+    }
 
-  if (!membership) {
+    const status = membership.membership_status;
+    if (status === "active") {
+      return {
+        status: "active",
+        userId: user.id,
+        email,
+        profile: (profile as Profile) ?? null,
+        membership: membership as TeamMember & { teams: Team | null },
+      };
+    }
+
+    // Map remaining statuses to a coarse gating bucket.
+    const bucket: InactiveSession["status"] =
+      status === "suspended"
+        ? "suspended"
+        : status === "removed"
+          ? "removed"
+          : "pending";
+
     return {
-      status: "no-membership",
-      userId: user.id,
-      email,
-      profile,
-      membership: null,
-      membershipStatus: null,
-    };
-  }
-
-  const status = membership.membership_status;
-  if (status === "active") {
-    return {
-      status: "active",
+      status: bucket,
       userId: user.id,
       email,
       profile: (profile as Profile) ?? null,
-      membership: membership as TeamMember & { teams: Team | null },
+      membership: membership as TeamMember,
+      membershipStatus: status,
     };
-  }
-
-  // Map remaining statuses to a coarse gating bucket.
-  const bucket: InactiveSession["status"] =
-    status === "suspended"
-      ? "suspended"
-      : status === "removed"
-        ? "removed"
-        : "pending";
-
-  return {
-    status: bucket,
-    userId: user.id,
-    email,
-    profile: (profile as Profile) ?? null,
-    membership: membership as TeamMember,
-    membershipStatus: status,
-  };
-}
+  },
+);
 
 /**
  * Server-side guard for (app) routes. Redirects inactive users to the right
