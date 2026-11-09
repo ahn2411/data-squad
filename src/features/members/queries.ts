@@ -14,7 +14,26 @@ export async function getMembers(): Promise<MemberWithProfile[]> {
 
   if (error) throw new Error("Could not load squad members.");
 
-  return (data ?? []) as unknown as MemberWithProfile[];
+  const members = (data ?? []) as unknown as MemberWithProfile[];
+  const { data: contacts, error: contactsError } = await supabase.rpc("get_pending_member_contacts");
+  if (contactsError) throw new Error("Could not load pending request contacts.");
+  const contactByUserId = new Map<string, { user_id: string; full_name: string | null; email: string | null }>(
+    ((contacts ?? []) as Array<{ user_id: string; full_name: string | null; email: string | null }>)
+      .map((contact) => [contact.user_id, contact]),
+  );
+
+  return members.map((member) => {
+    if (member.membership_status !== "pending_approval") return member;
+    const contact = contactByUserId.get(member.user_id);
+    return {
+      ...member,
+      profiles: member.profiles
+        ? { ...member.profiles, full_name: contact?.full_name ?? member.profiles.full_name, email: contact?.email ?? null }
+        : contact
+          ? { id: member.user_id, full_name: contact.full_name, username: null, avatar_url: null, github_username: null, created_at: member.created_at, email: contact.email }
+          : null,
+    } as MemberWithProfile;
+  });
 }
 
 export type AdminMemberOverview = {

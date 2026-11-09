@@ -483,6 +483,10 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      get_pending_member_contacts: {
+        Args: Record<PropertyKey, never>;
+        Returns: { user_id: string; full_name: string | null; email: string | null }[];
+      };
       get_my_profile_timezone: { Args: Record<string, never>; Returns: string | null };
     };
     Enums: {
@@ -562,7 +566,7 @@ export type Notification = Database["public"]["Tables"]["notifications"]["Row"];
 export type MemberWithProfile = TeamMember & {
   profiles: Pick<
     Profile, "id" | "full_name" | "username" | "avatar_url" | "github_username" | "created_at"
-  >;
+  > & { email?: string | null };
 };
 
 export type TopicWithProgress = Topic & {

@@ -88,6 +88,7 @@ export function MembersTable({
     ? members.filter((member) => {
         const searchable = [
           member.profiles?.full_name,
+          member.profiles?.email,
           member.profiles?.username,
           member.profiles?.github_username,
           member.role,
@@ -203,6 +204,9 @@ export function MembersTable({
                             </Badge>
                           ) : null}
                         </div>
+                        {status === "pending_approval" && member.profiles?.email ? (
+                          <p className="truncate text-[11px] text-muted-foreground">{member.profiles.email}</p>
+                        ) : null}
                       </div>
                     </Link>
                   </TableCell>
