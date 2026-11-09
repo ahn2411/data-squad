@@ -2,6 +2,8 @@
 
 > Persistent tracker per the master implementation prompt §22/§23.
 > Status legend: ✅ done · ◐ partial · ⬜ not started
+>
+> **Historical snapshot:** This checklist predates the current completion audit and its `✅ done` labels were not supported by end-to-end role/RLS evidence. Use `FEATURE_COMPLETION_TRACKER.md` and `COMPLETION_AUDIT.md` as the current source of truth; the details below are retained as historical context only.
 
 ## Feature implementation status
 
@@ -68,7 +70,7 @@
 3. **Email delivery** (invite emails, password reset) depends on Supabase Auth email config. In-app notifications work regardless.
 4. **Realtime** not wired (notifications are read on page load / refresh; no live socket). Supabase Realtime is in the stack and can be added later.
 5. **Topic completion validation** is a deliberate self-action (per spec FR-R: not auto on view). Full validation against assignment submissions is a future enhancement — completion_criteria are stored for reference.
-6. **Curriculum** is seeded but admin-editable; the seed is idempotent so re-running updates content in place.
+6. **Curriculum** is seeded and admin-editable. Migration 0016 preserves rows already edited in the app when the original seed is re-run; this SQL behavior still needs a disposable PostgreSQL/Supabase test.
 
 ## Next steps (recommended)
 - Apply migrations 0001–0007 to the intended Supabase project and run bootstrap-admin.sql.

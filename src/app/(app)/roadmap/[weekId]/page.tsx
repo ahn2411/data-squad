@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import {
   ArrowLeft,
   CheckCircle2,
-  ListChecks,
   Package,
   Target,
 } from "lucide-react";
@@ -21,12 +20,14 @@ import { requireActiveMember } from "@/features/auth/session";
 import {
   getWeekDetail,
   getTopicProgressForUser,
+  getWeekProgressForUser,
   type WeekDetail,
 } from "@/features/roadmap/queries";
 import { WeekStatusBadge } from "@/features/roadmap/status-badges";
 import { TopicContent } from "@/features/roadmap/topic-content";
-import { formatDate, percent } from "@/lib/format";
+import { formatDate, formatStudyTime, percent } from "@/lib/format";
 import type { TopicProgress } from "@/types/database";
+import { WeekDeliverablesChecklist } from "@/features/roadmap/week-deliverables-checklist";
 
 export const metadata = { title: "Week" };
 
@@ -40,11 +41,13 @@ export default async function WeekDetailPage({ params }: PageProps) {
 
   let week: WeekDetail | null = null;
   let progress: TopicProgress[] = [];
+  let weekProgress: Awaited<ReturnType<typeof getWeekProgressForUser>> = [];
   let fetchError: string | null = null;
   try {
-    [week, progress] = await Promise.all([
+    [week, progress, weekProgress] = await Promise.all([
       getWeekDetail(weekId),
       getTopicProgressForUser(session.userId),
+      getWeekProgressForUser(session.userId),
     ]);
   } catch (err) {
     fetchError =
@@ -73,14 +76,29 @@ export default async function WeekDetailPage({ params }: PageProps) {
       .map((p) => p.topic_id),
   );
   const total = week.topics.length;
+  const estimatedMinutes = week.topics.reduce(
+    (sum, topic) => sum + (topic.estimated_minutes && topic.estimated_minutes > 0 ? topic.estimated_minutes : 0),
+    0,
+  );
+  const estimatedStudyTime = formatStudyTime(estimatedMinutes);
   const completed = week.topics.filter((t) =>
     completedTopicIds.has(t.id),
   ).length;
-  const ratio = total > 0 ? completed / total : 0;
-
+  const requiredTopics = week.topics.filter((topic) => topic.publication_status === "published");
+  const requiredTopicsCompleted = requiredTopics.filter((topic) => completedTopicIds.has(topic.id)).length;
   const objectives = week.objectives ?? [];
   const deliverables = week.deliverables ?? [];
+  const savedWeekProgress = weekProgress.find((entry) => entry.week_id === week.id);
+  const completedDeliverables = savedWeekProgress?.completed_deliverables ?? [];
+  const completedCriteria = savedWeekProgress?.completed_criteria ?? [];
+  const allTopicsComplete = requiredTopics.length > 0 && requiredTopicsCompleted === requiredTopics.length;
+  const allDeliverablesComplete = deliverables.every((item) => completedDeliverables.includes(item));
   const criteria = week.completion_criteria ?? [];
+  const allCriteriaComplete = criteria.every((item) => completedCriteria.includes(item));
+  const weekComplete = allTopicsComplete && allDeliverablesComplete && allCriteriaComplete;
+  const requirementsTotal = requiredTopics.length + deliverables.length + criteria.length;
+  const requirementsDone = requiredTopicsCompleted + deliverables.filter((item) => completedDeliverables.includes(item)).length + criteria.filter((item) => completedCriteria.includes(item)).length;
+  const weekRatio = requirementsTotal > 0 ? requirementsDone / requirementsTotal : 0;
 
   const phaseName = week.phases?.title ?? "Phase";
   const phaseNumber = week.phases?.phase_number ?? null;
@@ -109,6 +127,12 @@ export default async function WeekDetailPage({ params }: PageProps) {
               </p>
             )}
 
+            {estimatedStudyTime ? (
+              <p className="text-[12px] text-muted-foreground">
+                Estimated study time: about {estimatedStudyTime}
+              </p>
+            ) : null}
+
             {objectives.length > 0 ? (
               <section>
                 <SectionTitle icon={Target}>Weekly objectives</SectionTitle>
@@ -126,33 +150,16 @@ export default async function WeekDetailPage({ params }: PageProps) {
               </section>
             ) : null}
 
-            {deliverables.length > 0 ? (
+            {deliverables.length > 0 || criteria.length > 0 ? (
               <section>
-                <SectionTitle icon={Package}>Deliverables</SectionTitle>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-[13px] leading-relaxed text-muted-foreground">
-                  {deliverables.map((d, i) => (
-                    <li key={i}>{d}</li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            {criteria.length > 0 ? (
-              <section>
-                <SectionTitle icon={ListChecks}>
-                  Week completion criteria
-                </SectionTitle>
-                <ul className="mt-2 space-y-1.5">
-                  {criteria.map((c, i) => (
-                    <li
-                      key={i}
-                      className="flex items-start gap-2 text-[13px] leading-relaxed text-foreground"
-                    >
-                      <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-primary" />
-                      <span>{c}</span>
-                    </li>
-                  ))}
-                </ul>
+                <SectionTitle icon={Package}>Week requirements</SectionTitle>
+                <WeekDeliverablesChecklist
+                  weekId={week.id}
+                  deliverables={deliverables}
+                  criteria={criteria}
+                  initiallyCompleted={completedDeliverables}
+                  initiallyCompletedCriteria={completedCriteria}
+                />
               </section>
             ) : null}
           </CardContent>
@@ -166,15 +173,15 @@ export default async function WeekDetailPage({ params }: PageProps) {
             </p>
             <div className="flex items-baseline gap-2">
               <span className="nums text-[22px] font-semibold text-foreground">
-                {completed}
+                {requirementsDone}
               </span>
               <span className="text-[13px] text-muted-foreground">
-                / {total} {total === 1 ? "topic" : "topics"} complete
+                / {requirementsTotal} learning requirements complete
               </span>
             </div>
-            <Progress value={ratio * 100} className="h-2" />
+            <Progress value={weekRatio * 100} className="h-2" />
             <p className="text-[12px] text-muted-foreground">
-              {percent(ratio)} complete
+              {percent(weekRatio)} complete{weekComplete ? " · Week complete" : ""}
             </p>
             {week.start_date || week.end_date ? (
               <div className="border-t border-border pt-3 text-[12px] text-muted-foreground">

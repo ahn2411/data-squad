@@ -44,7 +44,6 @@ import type { BlockerStatus } from "@/types/database";
 interface MemberOption {
   id: string;
   name: string;
-  email: string;
 }
 
 interface BlockerStatusFormProps {

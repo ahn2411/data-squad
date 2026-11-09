@@ -6,6 +6,8 @@ import {
   AlertCircle,
   Plus,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { requireActiveMember } from "@/features/auth/session";
 import { PageHeader } from "@/components/page-header";
@@ -13,7 +15,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { getThreads, type ThreadWithAuthor } from "@/features/discussions/queries";
+import {
+  DISCUSSION_PAGE_SIZE,
+  getThreads,
+  type ThreadPageResult,
+  type ThreadWithAuthor,
+} from "@/features/discussions/queries";
 import { DISCUSSION_CATEGORIES } from "@/features/discussions/schemas";
 import { NewThreadDialog } from "./new-thread-dialog";
 import { DiscussionsFilters } from "./discussions-filters";
@@ -22,7 +29,7 @@ import { formatDate, initials, relativeTime } from "@/lib/format";
 export const metadata = { title: "Discussions" };
 
 interface PageProps {
-  searchParams: Promise<{ category?: string; q?: string }>;
+  searchParams: Promise<{ category?: string; q?: string; page?: string }>;
 }
 
 export default async function DiscussionsPage({ searchParams }: PageProps) {
@@ -30,15 +37,27 @@ export default async function DiscussionsPage({ searchParams }: PageProps) {
   const sp = await searchParams;
 
   const category =
-    typeof sp.category === "string" && sp.category !== "all"
+    typeof sp.category === "string" &&
+    sp.category !== "all" &&
+    DISCUSSION_CATEGORIES.some((candidate) => candidate === sp.category)
       ? sp.category
       : undefined;
-  const search = typeof sp.q === "string" ? sp.q : undefined;
+  const search = typeof sp.q === "string" ? sp.q.trim().slice(0, 100) || undefined : undefined;
+  const parsedPage = typeof sp.page === "string" ? Number(sp.page) : 1;
+  const requestedPage = Number.isSafeInteger(parsedPage) && parsedPage > 0
+    ? parsedPage
+    : 1;
 
-  let threads: ThreadWithAuthor[] = [];
+  let threadPage: ThreadPageResult = {
+    threads: [],
+    page: 1,
+    pageSize: DISCUSSION_PAGE_SIZE,
+    totalCount: 0,
+    totalPages: 1,
+  };
   let loadError: string | null = null;
   try {
-    threads = await getThreads({ category, search });
+    threadPage = await getThreads({ category, search, page: requestedPage });
   } catch (err) {
     loadError =
       err instanceof Error ? err.message : "Could not load discussions.";
@@ -60,7 +79,14 @@ export default async function DiscussionsPage({ searchParams }: PageProps) {
     );
   }
 
+  const threads: ThreadWithAuthor[] = threadPage.threads;
   const currentCategory = category ?? "all";
+  const firstPageItem = threadPage.totalCount === 0
+    ? 0
+    : (threadPage.page - 1) * threadPage.pageSize + 1;
+  const lastPageItem = Math.min(threadPage.page * threadPage.pageSize, threadPage.totalCount);
+  const pageWindowStart = Math.max(1, Math.min(threadPage.page - 2, threadPage.totalPages - 4));
+  const pageWindowEnd = Math.min(threadPage.totalPages, pageWindowStart + 4);
 
   return (
     <>
@@ -71,6 +97,7 @@ export default async function DiscussionsPage({ searchParams }: PageProps) {
       />
 
       <DiscussionsFilters
+        key={`${currentCategory}:${search ?? ""}`}
         categories={DISCUSSION_CATEGORIES}
         currentCategory={currentCategory}
         currentSearch={search ?? ""}
@@ -110,7 +137,7 @@ export default async function DiscussionsPage({ searchParams }: PageProps) {
           <ul className="divide-y divide-border">
             {threads.map((thread) => {
               const authorName =
-                thread.author?.full_name ?? thread.author?.email ?? "Member";
+                thread.author?.full_name ?? "Member";
               const isPinned = Boolean(thread.pinned_at);
               const isLocked = Boolean(thread.locked_at);
               return (
@@ -173,9 +200,13 @@ export default async function DiscussionsPage({ searchParams }: PageProps) {
         </div>
       )}
 
-      <div className="mt-3 flex items-center gap-2 text-[12px] text-muted-foreground">
-        <span className="nums font-medium text-foreground">{threads.length}</span>
-        {threads.length === 1 ? "thread" : "threads"}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+        <span>
+          Showing <span className="nums font-medium text-foreground">{firstPageItem}–{lastPageItem}</span>
+          {" of "}
+          <span className="nums font-medium text-foreground">{threadPage.totalCount}</span>
+          {threadPage.totalCount === 1 ? " thread" : " threads"}
+        </span>
         {currentCategory !== "all" ? (
           <>
             <span className="text-muted-foreground/50">·</span>
@@ -183,6 +214,66 @@ export default async function DiscussionsPage({ searchParams }: PageProps) {
           </>
         ) : null}
       </div>
+
+      {threadPage.totalPages > 1 ? (
+        <nav
+          aria-label="Discussion pages"
+          className="mt-4 flex flex-wrap items-center justify-center gap-1.5"
+        >
+          {threadPage.page > 1 ? (
+            <Link
+              href={discussionPageHref(threadPage.page - 1, currentCategory, search)}
+              rel="prev"
+              className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              <ChevronLeft className="size-4" /> Previous
+            </Link>
+          ) : (
+            <span className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-[12px] text-muted-foreground/50" aria-disabled="true">
+              <ChevronLeft className="size-4" /> Previous
+            </span>
+          )}
+          {Array.from(
+            { length: pageWindowEnd - pageWindowStart + 1 },
+            (_, index) => pageWindowStart + index,
+          ).map((pageNumber) => (
+            <Link
+              key={pageNumber}
+              href={discussionPageHref(pageNumber, currentCategory, search)}
+              aria-current={pageNumber === threadPage.page ? "page" : undefined}
+              aria-label={`Page ${pageNumber}`}
+              className={`inline-flex size-9 items-center justify-center rounded-md border text-[12px] font-medium transition-colors ${
+                pageNumber === threadPage.page
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-foreground hover:bg-accent"
+              }`}
+            >
+              {pageNumber}
+            </Link>
+          ))}
+          {threadPage.page < threadPage.totalPages ? (
+            <Link
+              href={discussionPageHref(threadPage.page + 1, currentCategory, search)}
+              rel="next"
+              className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              Next <ChevronRight className="size-4" />
+            </Link>
+          ) : (
+            <span className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-[12px] text-muted-foreground/50" aria-disabled="true">
+              Next <ChevronRight className="size-4" />
+            </span>
+          )}
+        </nav>
+      ) : null}
     </>
   );
+}
+
+function discussionPageHref(page: number, category: string, search?: string): string {
+  const params = new URLSearchParams();
+  if (category !== "all") params.set("category", category);
+  if (search) params.set("q", search);
+  params.set("page", String(page));
+  return `/discussions?${params.toString()}`;
 }

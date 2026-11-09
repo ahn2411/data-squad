@@ -67,3 +67,11 @@ export function percent(ratio: number): string {
   if (!Number.isFinite(ratio)) return "—";
   return `${Math.round(ratio * 100)}%`;
 }
+
+/** Format summed topic estimates for a week. Returns null when none are set. */
+export function formatStudyTime(minutes: number | null | undefined): string | null {
+  if (minutes == null || !Number.isFinite(minutes) || minutes <= 0) return null;
+  const roundedHours = Math.round((minutes / 60) * 10) / 10;
+  const hours = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(roundedHours);
+  return `${hours} ${roundedHours === 1 ? "hour" : "hours"}`;
+}

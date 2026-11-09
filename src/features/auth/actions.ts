@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/configured";
+import { getAuthCallbackUrl } from "@/lib/auth-redirect";
 import {
   loginSchema,
   registerSchema,
@@ -24,10 +25,6 @@ function notConfigured(): ActionResult {
     error:
       "Supabase is not configured. Set the env variables in .env.local and restart.",
   };
-}
-
-function siteUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 }
 
 /** Sign in with email + password. */
@@ -75,12 +72,18 @@ export async function signUpAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
+  const emailRedirectTo = getAuthCallbackUrl("/pending-approval");
+  if (!emailRedirectTo) {
+    return { ok: false, error: "Email confirmation is not configured for this deployment. Contact the administrator." };
+  }
+
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
       data: { full_name: parsed.data.fullName },
+      emailRedirectTo,
     },
   });
 
@@ -96,8 +99,12 @@ export async function signUpAction(
       };
     }
 
-    // Supabase returns a generic message; surface it without leaking internals.
-    return { ok: false, error: "Could not create the account. " + error.message };
+    // Keep provider/database details out of the public response and avoid
+    // exposing whether an account already exists for the submitted email.
+    return {
+      ok: false,
+      error: "Could not create the account. Check your details and try again.",
+    };
   }
 
   // With email confirmation enabled, Supabase creates the account but does
@@ -127,10 +134,15 @@ export async function requestPasswordResetAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
+  const redirectTo = getAuthCallbackUrl("/reset-password");
+  if (!redirectTo) {
+    return { ok: false, error: "Password reset emails are not configured for this deployment." };
+  }
+
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.resetPasswordForEmail(
     parsed.data.email,
-    { redirectTo: `${siteUrl()}/reset-password` },
+    { redirectTo },
   );
 
   if (error) {

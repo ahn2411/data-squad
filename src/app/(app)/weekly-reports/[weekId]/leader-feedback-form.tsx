@@ -25,11 +25,6 @@ export function LeaderFeedbackForm({
   const [pending, startTransition] = useTransition();
   const [value, setValue] = React.useState(defaultFeedback);
 
-  // Re-sync if the server passes a new default (e.g. after refresh).
-  React.useEffect(() => {
-    setValue(defaultFeedback);
-  }, [defaultFeedback]);
-
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     startTransition(async () => {

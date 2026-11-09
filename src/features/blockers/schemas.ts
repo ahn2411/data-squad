@@ -15,6 +15,7 @@ export const BLOCKER_STATUSES: BlockerStatus[] = [
   "open",
   "being_addressed",
   "resolved",
+  "closed",
 ];
 
 const urlString = z
@@ -83,7 +84,7 @@ export type CreateCommentValues = z.infer<typeof createCommentSchema>;
 /** Admin/leader-side filter for the blockers table. */
 export const blockerFilterSchema = z.object({
   status: z
-    .enum(["all", "open", "being_addressed", "resolved"])
+    .enum(["all", "open", "being_addressed", "resolved", "closed"])
     .default("all"),
   priority: z
     .enum(["all", "low", "medium", "high", "critical"])

@@ -1,18 +1,47 @@
 import { requireActiveMember } from "@/features/auth/session";
 import { PageHeader } from "@/components/page-header";
 import {
+  ASSIGNMENT_PAGE_SIZE,
   getAssignmentsForUser,
-  type AssignmentWithMySubmission,
 } from "@/features/assignments/queries";
-import { AssignmentsList } from "./assignments-list";
+import { AssignmentsList, type StatusFilter } from "./assignments-list";
 
-export default async function AssignmentsPage() {
+const statusFilters: StatusFilter[] = [
+  "all",
+  "pending",
+  "submitted",
+  "approved",
+  "overdue",
+];
+
+export default async function AssignmentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string; status?: string; page?: string }>;
+}) {
+  const params = await searchParams;
   const session = await requireActiveMember();
 
-  let assignments: AssignmentWithMySubmission[] = [];
+  const search = (params.search ?? "").trim().slice(0, 120);
+  const requestedPage = Number(params.page);
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  let result: Awaited<ReturnType<typeof getAssignmentsForUser>> = {
+    assignments: [],
+    totalCount: 0,
+    page: 1,
+    pageSize: ASSIGNMENT_PAGE_SIZE,
+  };
   let loadError: string | null = null;
   try {
-    assignments = await getAssignmentsForUser();
+    result = await getAssignmentsForUser(
+      {
+        search,
+        status: statusFilters.includes(params.status as StatusFilter)
+          ? (params.status as StatusFilter)
+          : "all",
+      },
+      page,
+    );
   } catch {
     loadError = "Could not load assignments right now.";
   }
@@ -23,7 +52,19 @@ export default async function AssignmentsPage() {
         title="Assignments"
         description="Exercises and deliverables assigned to you. Submit work before the deadline."
       />
-      <AssignmentsList assignments={assignments} loadError={loadError} />
+      <AssignmentsList
+        assignments={result.assignments}
+        totalCount={result.totalCount}
+        page={result.page}
+        pageSize={result.pageSize}
+        loadError={loadError}
+        initialSearch={search}
+        initialStatus={
+          statusFilters.includes(params.status as StatusFilter)
+            ? (params.status as StatusFilter)
+            : "all"
+        }
+      />
     </>
   );
 }

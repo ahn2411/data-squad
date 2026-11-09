@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/configured";
 import { getSessionContext } from "@/features/auth/session";
+import { WEEKLY_REPORT_EDIT_WINDOW_MS } from "./policy";
 import {
   weeklyReportSchema,
   leaderFeedbackSchema,
@@ -48,8 +49,9 @@ async function requireLeaderOrAdmin(): Promise<
  * never touched by this action.
  *
  * The unique (user_id, week_id) constraint means a member has exactly one
- * report per week; on update we preserve submitted_at (the original submit
- * time) and only refresh updated_at via the trigger.
+ * report per week. Members can edit it for seven days after their latest save;
+ * the database sets the authoritative submitted_at timestamp and enforces the
+ * same window for requests that bypass this action.
  */
 export async function saveReportAction(
   weekId: string,
@@ -92,7 +94,7 @@ export async function saveReportAction(
   // Look for an existing report.
   const { data: existing } = await supabase
     .from("weekly_reports")
-    .select("id")
+    .select("id, submitted_at")
     .eq("week_id", weekId)
     .eq("user_id", user.userId)
     .maybeSingle();
@@ -119,6 +121,16 @@ export async function saveReportAction(
   };
 
   if (existing) {
+    if (
+      Date.now() - Date.parse(existing.submitted_at) >=
+      WEEKLY_REPORT_EDIT_WINDOW_MS
+    ) {
+      return {
+        ok: false,
+        error: "This report is locked because its 7-day edit window has ended.",
+      };
+    }
+
     const { error } = await supabase
       .from("weekly_reports")
       // Intentionally omit leader_feedback — only the member's own fields.
@@ -134,18 +146,21 @@ export async function saveReportAction(
         questions: payload.questions,
         next_week_goals: payload.next_week_goals,
         github_links: payload.github_links,
-        // Refresh submitted_at on each save so leaders see the latest update.
-        submitted_at: new Date().toISOString(),
       })
       .eq("id", existing.id);
 
     if (error) {
+      if (error.message.includes("weekly_report_edit_window_closed")) {
+        return {
+          ok: false,
+          error: "This report is locked because its 7-day edit window has ended.",
+        };
+      }
       return { ok: false, error: "Could not update the report." };
     }
   } else {
     const { error } = await supabase.from("weekly_reports").insert({
       ...payload,
-      submitted_at: new Date().toISOString(),
     });
 
     if (error) {

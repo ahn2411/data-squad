@@ -25,6 +25,7 @@ import { ReviewForm } from "./review-form";
 import { ReviewList } from "@/features/submissions/review-list";
 import { SubmissionRevisionList } from "@/features/submissions/submission-revision-list";
 import { formatDate, formatDateTime, initials } from "@/lib/format";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -66,13 +67,26 @@ export default async function SubmissionDetailPage({ params }: PageProps) {
   }
 
   const assignment = submission.assignments;
+  const attachmentPaths = submission.submission_files.map((file) => file.storage_path);
+  const supabase = await createSupabaseServerClient();
+  const { data: signedAttachments } = attachmentPaths.length
+    ? await supabase.storage
+        .from("squad-attachments")
+        .createSignedUrls(attachmentPaths, 30 * 60, { download: true })
+    : { data: [] };
+  const attachmentUrls = new Map(
+    (signedAttachments ?? []).flatMap((file) =>
+      file.path && file.signedUrl ? [[file.path, file.signedUrl] as const] : [],
+    ),
+  );
   const isOwn = submission.user_id === session.userId;
   const canReview =
     !isOwn &&
+    (submission.status === "submitted" || submission.status === "under_review") &&
     (session.membership.role === "admin" || session.membership.role === "leader");
 
   const submitterName =
-    submission.profiles?.full_name ?? submission.profiles?.email ?? "Member";
+    submission.profiles?.full_name ?? "Member";
 
   return (
     <>
@@ -119,7 +133,6 @@ export default async function SubmissionDetailPage({ params }: PageProps) {
                 <div>
                   <p className="text-[13px] font-medium text-foreground">{submitterName}</p>
                   <p className="text-[12px] text-muted-foreground">
-                    {submission.profiles?.email ?? ""}
                   </p>
                 </div>
                 <div className="ml-auto text-right">
@@ -179,8 +192,6 @@ export default async function SubmissionDetailPage({ params }: PageProps) {
                 <p className="text-[13px] text-muted-foreground">No content captured.</p>
               ) : null}
 
-              {/* Submission files (metadata only if any). Storage upload is
-                  gated by the 'submissions' bucket existing. */}
               {submission.submission_files.length > 0 ? (
                 <>
                   <Separator />
@@ -194,9 +205,18 @@ export default async function SubmissionDetailPage({ params }: PageProps) {
                           key={f.id}
                           className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-1.5"
                         >
-                          <span className="truncate text-[13px] text-foreground">
-                            {f.file_name}
-                          </span>
+                          {attachmentUrls.has(f.storage_path) ? (
+                            <a
+                              href={attachmentUrls.get(f.storage_path)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="truncate text-[13px] text-primary underline-offset-4 hover:underline"
+                            >
+                              {f.file_name}
+                            </a>
+                          ) : (
+                            <span className="truncate text-[13px] text-foreground">{f.file_name}</span>
+                          )}
                           {f.file_size !== null ? (
                             <span className="nums text-[11px] text-muted-foreground">
                               {Math.round(f.file_size / 1024)} KB

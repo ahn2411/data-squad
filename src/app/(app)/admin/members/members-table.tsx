@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useTransition } from "react";
+import Link from "next/link";
 import {
   MoreHorizontal,
   Check,
@@ -10,10 +11,12 @@ import {
   UserMinus,
   Shield,
   Loader2,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -69,6 +72,7 @@ export function MembersTable({
   currentUserId,
 }: MembersTableProps) {
   const [pending, startTransition] = useTransition();
+  const [search, setSearch] = React.useState("");
   const [confirm, setConfirm] = React.useState<{
     type: ConfirmType;
     member: MemberWithProfile;
@@ -79,6 +83,21 @@ export function MembersTable({
       m.membership_status === "pending_invite" ||
       m.membership_status === "pending_approval",
   ).length;
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const filteredMembers = normalizedSearch
+    ? members.filter((member) => {
+        const searchable = [
+          member.profiles?.full_name,
+          member.profiles?.username,
+          member.profiles?.github_username,
+          member.role,
+          member.membership_status,
+        ];
+        return searchable.some((value) =>
+          value?.toLocaleLowerCase().includes(normalizedSearch),
+        );
+      })
+    : members;
 
   const runNonDestructive = (
     fn: () => Promise<{ ok: boolean; error?: string }>,
@@ -121,9 +140,11 @@ export function MembersTable({
 
   return (
     <>
-      <div className="mb-3 flex items-center gap-2 text-[13px] text-muted-foreground">
-        <span className="nums font-medium text-foreground">{members.length}</span>
-        {members.length === 1 ? "member" : "members"}
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
+        <span className="nums font-medium text-foreground">{filteredMembers.length}</span>
+        {filteredMembers.length === 1 ? "member" : "members"}
+        {normalizedSearch ? <span>of {members.length}</span> : null}
         {pendingCount > 0 ? (
           <>
             <span className="text-muted-foreground/50">·</span>
@@ -131,6 +152,17 @@ export function MembersTable({
             pending
           </>
         ) : null}
+        </div>
+        <div className="relative w-full sm:max-w-xs">
+          <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search members…"
+            aria-label="Search members by name, username, role, or status"
+            className="pl-9"
+          />
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -145,17 +177,16 @@ export function MembersTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {members.map((member) => {
+            {filteredMembers.map((member) => {
               const isSelf = member.user_id === currentUserId;
               const status = member.membership_status;
-              const name = member.profiles?.full_name ?? member.profiles?.email ?? "Unknown";
-              const email = member.profiles?.email ?? "";
+              const name = member.profiles?.full_name ?? member.profiles?.username ?? "Member";
 
               return (
                 <TableRow key={member.id} className="group">
                   {/* Member cell — sticky on horizontal scroll */}
                   <TableCell className="min-w-[220px]">
-                    <div className="flex items-center gap-3">
+                    <Link href={`/admin/members/${member.user_id}`} aria-label={`View ${name}'s profile and activity`} className="flex items-center gap-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       <Avatar className="size-8 border border-border">
                         <AvatarFallback className="bg-primary/10 text-[11px] font-medium text-primary">
                           {initials(name)}
@@ -172,11 +203,8 @@ export function MembersTable({
                             </Badge>
                           ) : null}
                         </div>
-                        <p className="truncate text-[12px] text-muted-foreground">
-                          {email}
-                        </p>
                       </div>
-                    </div>
+                    </Link>
                   </TableCell>
 
                   <TableCell>
@@ -327,6 +355,13 @@ export function MembersTable({
                 </TableRow>
               );
             })}
+            {filteredMembers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={isAdmin ? 5 : 4} className="py-10 text-center text-[13px] text-muted-foreground">
+                  No members match “{search.trim()}”.
+                </TableCell>
+              </TableRow>
+            ) : null}
           </TableBody>
         </Table>
       </div>
@@ -345,8 +380,8 @@ export function MembersTable({
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {confirm.type === "suspend"
-                    ? `${confirm.member.profiles?.full_name ?? confirm.member.profiles?.email} will lose access immediately. You can reinstate them later.`
-                    : `${confirm.member.profiles?.full_name ?? confirm.member.profiles?.email} will be removed from the team. Their account and submissions are preserved.`}
+                    ? `${confirm.member.profiles?.full_name ?? confirm.member.profiles?.username ?? "This member"} will lose access immediately. You can reinstate them later.`
+                    : `${confirm.member.profiles?.full_name ?? confirm.member.profiles?.username ?? "This member"} will be removed from the team. Their account and submissions are preserved.`}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

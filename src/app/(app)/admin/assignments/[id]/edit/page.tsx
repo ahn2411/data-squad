@@ -8,6 +8,7 @@ import { AssignmentForm } from "../../assignment-form";
 import { getMembers } from "@/features/members/queries";
 import { getPhasesAndWeeks } from "../../new/queries";
 import { getAdminAssignmentDetail } from "@/features/assignments/queries";
+import { AssignmentAttachments } from "../../assignment-attachments";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -58,8 +59,7 @@ export default async function EditAssignmentPage({ params }: PageProps) {
     .filter((m) => m.membership_status === "active")
     .map((m) => ({
       id: m.user_id,
-      name: m.profiles?.full_name ?? m.profiles?.email ?? "Unknown",
-      email: m.profiles?.email ?? "",
+      name: m.profiles?.full_name ?? "Member",
     }));
 
   return (
@@ -75,6 +75,14 @@ export default async function EditAssignmentPage({ params }: PageProps) {
         members={activeMembers}
         phases={phases}
       />
+      <div className="mt-6">
+        <AssignmentAttachments
+          assignmentId={detail.assignment.id}
+          teamId={session.membership.team_id}
+          userId={session.userId}
+          files={detail.files}
+        />
+      </div>
     </>
   );
 }

@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2, Save, Send, ArrowLeft, X, Plus } from "lucide-react";
@@ -59,7 +59,7 @@ interface AssignmentFormProps {
   mode: "create" | "edit";
   assignment?: Assignment;
   selectedRecipientIds?: string[];
-  members: Array<{ id: string; name: string; email: string }>;
+  members: Array<{ id: string; name: string }>;
   phases: PhaseOption[];
 }
 
@@ -166,7 +166,10 @@ export function AssignmentForm({
     }
   }, [allMembersToggle, form]);
 
-  const recipients = form.watch("recipientUserIds");
+  const recipients = useWatch({ control: form.control, name: "recipientUserIds" });
+  const supportingResources = useWatch({ control: form.control, name: "supporting_resources" });
+  const deliverables = useWatch({ control: form.control, name: "deliverables" });
+  const evaluationCriteria = useWatch({ control: form.control, name: "evaluation_criteria" });
 
   const toggleRecipient = (id: string) => {
     const current = form.getValues("recipientUserIds");
@@ -242,7 +245,7 @@ export function AssignmentForm({
     );
   };
 
-  const selectedPhaseId = form.watch("phase_id");
+  const selectedPhaseId = useWatch({ control: form.control, name: "phase_id" });
   const selectedPhase = phases.find((p) => p.id === selectedPhaseId);
 
   const onSubmit = (values: FormValues) => {
@@ -660,7 +663,7 @@ export function AssignmentForm({
               value={resourceInput}
               onChange={setResourceInput}
               onAdd={addResource}
-              items={form.watch("supporting_resources")}
+              items={supportingResources}
               onRemove={removeResource}
               isUrl
             />
@@ -672,7 +675,7 @@ export function AssignmentForm({
               value={deliverableInput}
               onChange={setDeliverableInput}
               onAdd={addDeliverable}
-              items={form.watch("deliverables")}
+              items={deliverables}
               onRemove={removeDeliverable}
             />
             <Separator />
@@ -683,7 +686,7 @@ export function AssignmentForm({
               value={criteriaInput}
               onChange={setCriteriaInput}
               onAdd={addCriterion}
-              items={form.watch("evaluation_criteria")}
+              items={evaluationCriteria}
               onRemove={removeCriterion}
             />
           </CardContent>
@@ -737,7 +740,6 @@ export function AssignmentForm({
                                 {m.name}
                               </span>
                               <span className="block truncate text-[12px] text-muted-foreground">
-                                {m.email}
                               </span>
                             </span>
                           </label>

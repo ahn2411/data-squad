@@ -108,16 +108,18 @@ export function TopicContent({
       ) : null}
 
       {/* Prerequisites */}
-      {prerequisites.length > 0 ? (
-        <section>
-          <SectionTitle icon={ListChecks}>Prerequisites</SectionTitle>
+      <section>
+        <SectionTitle icon={ListChecks}>Prerequisites</SectionTitle>
+        {prerequisites.length > 0 ? (
           <ul className="mt-2 list-disc space-y-1 pl-5 text-[13px] leading-relaxed text-muted-foreground">
-            {prerequisites.map((p, i) => (
-              <li key={i}>{p}</li>
-            ))}
+            {prerequisites.map((p, i) => <li key={i}>{p}</li>)}
           </ul>
-        </section>
-      ) : null}
+        ) : (
+          <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+            No prior knowledge is required for this topic.
+          </p>
+        )}
+      </section>
 
       {/* Practical exercise */}
       {topic.practical_exercise ? (
@@ -204,7 +206,12 @@ export function TopicContent({
               ? "Mark complete when you've met the criteria above."
               : "Start when you're ready. Completion is deliberate."}
         </p>
-        <TopicProgressButton topicId={topic.id} status={status} compact />
+        <TopicProgressButton
+          topicId={topic.id}
+          status={status}
+          completionCriteria={criteria}
+          compact
+        />
       </div>
     </div>
   );

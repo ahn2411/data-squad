@@ -1,11 +1,13 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { CheckCheck, Loader2, BellOff } from "lucide-react";
+import { CheckCheck, Loader2, BellOff, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { safeInternalPath } from "@/lib/utils";
 import {
   notificationIcon,
   notificationLabel,
@@ -16,23 +18,40 @@ import type { Notification, NotificationType } from "@/types/database";
 
 interface NotificationsListProps {
   notifications: Notification[];
+  unreadCount: number;
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
-export function NotificationsList({ notifications }: NotificationsListProps) {
+export function NotificationsList({
+  notifications,
+  unreadCount,
+  totalCount,
+  page,
+  pageSize,
+  totalPages,
+}: NotificationsListProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = React.useState<string | null>(null);
 
-  const unreadCount = notifications.filter((n) => n.read_at === null).length;
+  const firstItem = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastItem = Math.min(page * pageSize, totalCount);
 
   const handleMarkAll = () => {
     startTransition(async () => {
-      const res = await markAllReadAction();
-      if (res.ok) {
-        toast.success("All notifications marked as read.");
-        router.refresh();
-      } else {
-        toast.error(res.error);
+      try {
+        const res = await markAllReadAction();
+        if (res.ok) {
+          toast.success("All notifications marked as read.");
+          router.refresh();
+        } else {
+          toast.error(res.error);
+        }
+      } catch {
+        toast.error("Could not update notifications. Please try again.");
       }
     });
   };
@@ -43,15 +62,26 @@ export function NotificationsList({ notifications }: NotificationsListProps) {
   ) => {
     // If unread, mark it read first (server action), then navigate.
     if (n.read_at === null && n.link) {
+      const href = safeInternalPath(n.link);
+      if (!href) {
+        e.preventDefault();
+        toast.error("This notification link is unavailable.");
+        return;
+      }
       e.preventDefault();
       setBusyId(n.id);
       startTransition(async () => {
-        const res = await markNotificationReadAction(n.id);
-        if (!res.ok) toast.error(res.error);
-        // Navigate regardless — the user wants to see the entity.
-        router.push(n.link as string);
-        router.refresh();
-        setBusyId(null);
+        try {
+          const res = await markNotificationReadAction(n.id);
+          if (!res.ok) toast.error(res.error);
+        } catch {
+          toast.error("Could not update notification status.");
+        } finally {
+          // Navigate regardless — the user wants to see the entity.
+          router.push(href);
+          router.refresh();
+          setBusyId(null);
+        }
       });
     }
     // If already read or no link, the anchor's href navigates naturally.
@@ -76,10 +106,10 @@ export function NotificationsList({ notifications }: NotificationsListProps) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-[12px] text-muted-foreground">
-          <span className="nums font-medium text-foreground">
-            {notifications.length}
-          </span>{" "}
-          {notifications.length === 1 ? "notification" : "notifications"}
+          Showing <span className="nums font-medium text-foreground">{firstItem}–{lastItem}</span>
+          {" of "}
+          <span className="nums font-medium text-foreground">{totalCount}</span>{" "}
+          {totalCount === 1 ? "notification" : "notifications"}
           {unreadCount > 0 ? (
             <>
               <span className="text-muted-foreground/50">·</span>{" "}
@@ -111,7 +141,7 @@ export function NotificationsList({ notifications }: NotificationsListProps) {
           const Icon = notificationIcon(n.type as NotificationType);
           const isUnread = n.read_at === null;
           const isBusy = busyId === n.id;
-          const href = n.link ?? null;
+          const href = safeInternalPath(n.link);
           const rowClassName = `flex gap-3 px-4 py-3 transition-colors ${
             href ? "hover:bg-accent/40 cursor-pointer" : ""
           } ${isUnread ? "bg-primary/[0.03]" : ""}`;
@@ -180,6 +210,41 @@ export function NotificationsList({ notifications }: NotificationsListProps) {
           );
         })}
       </ul>
+
+      {totalPages > 1 ? (
+        <nav aria-label="Notification pages" className="flex flex-wrap items-center justify-center gap-1.5">
+          {page > 1 ? (
+            <Link
+              href={`/notifications?page=${page - 1}`}
+              rel="prev"
+              className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              <ChevronLeft className="size-4" /> Previous
+            </Link>
+          ) : (
+            <span aria-disabled="true" className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-[12px] text-muted-foreground/50">
+              <ChevronLeft className="size-4" /> Previous
+            </span>
+          )}
+          <span className="px-2 text-[12px] text-muted-foreground" aria-live="polite">
+            Page <span className="nums font-medium text-foreground">{page}</span> of{" "}
+            <span className="nums font-medium text-foreground">{totalPages}</span>
+          </span>
+          {page < totalPages ? (
+            <Link
+              href={`/notifications?page=${page + 1}`}
+              rel="next"
+              className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              Next <ChevronRight className="size-4" />
+            </Link>
+          ) : (
+            <span aria-disabled="true" className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-[12px] text-muted-foreground/50">
+              Next <ChevronRight className="size-4" />
+            </span>
+          )}
+        </nav>
+      ) : null}
     </div>
   );
 }

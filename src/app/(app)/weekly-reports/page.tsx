@@ -10,6 +10,7 @@ import {
   getWeeksForReport,
   getMyReportStubs,
   getAllReports,
+  getMissingReportMembers,
 } from "@/features/reports/queries";
 import { getMembers } from "@/features/members/queries";
 import { formatDate } from "@/lib/format";
@@ -18,7 +19,7 @@ import { ReportsTable } from "./reports-table";
 export const metadata = { title: "Weekly reports" };
 
 interface PageProps {
-  searchParams: Promise<{ week?: string; user?: string }>;
+  searchParams: Promise<{ week?: string; user?: string; q?: string; page?: string }>;
 }
 
 export default async function WeeklyReportsPage({ searchParams }: PageProps) {
@@ -30,6 +31,8 @@ export default async function WeeklyReportsPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const weekFilter = typeof sp.week === "string" ? sp.week : undefined;
   const userFilter = typeof sp.user === "string" ? sp.user : undefined;
+  const searchFilter = typeof sp.q === "string" ? sp.q.slice(0, 120) : undefined;
+  const requestedPage = typeof sp.page === "string" && /^\d+$/.test(sp.page) ? Number(sp.page) : 1;
 
   let weeks: Awaited<ReturnType<typeof getWeeksForReport>> = [];
   let myStubs: Awaited<ReturnType<typeof getMyReportStubs>> = [];
@@ -62,16 +65,20 @@ export default async function WeeklyReportsPage({ searchParams }: PageProps) {
 
   // Leader/admin branch: full team reports table.
   if (isLeader) {
-    let reports: Awaited<ReturnType<typeof getAllReports>> = [];
+    let reportPage: Awaited<ReturnType<typeof getAllReports>> = { reports: [], totalCount: 0, page: 1, pageSize: 20 };
     let members: Awaited<ReturnType<typeof getMembers>> = [];
+    let missingMembers: Awaited<ReturnType<typeof getMissingReportMembers>> = [];
+    const selectedReportWeek = weeks.find((week) => week.id === weekFilter) ?? null;
     let teamError: string | null = null;
     try {
-      [reports, members] = await Promise.all([
+      [reportPage, members, missingMembers] = await Promise.all([
         getAllReports({
           weekId: weekFilter,
           userId: userFilter,
-        }),
+          search: searchFilter,
+        }, requestedPage),
         getMembers(),
+        selectedReportWeek ? getMissingReportMembers(selectedReportWeek.id) : Promise.resolve([]),
       ]);
     } catch (err) {
       teamError =
@@ -143,16 +150,48 @@ export default async function WeeklyReportsPage({ searchParams }: PageProps) {
           </Card>
         ) : null}
 
+        {selectedReportWeek ? (
+          <Card className="mb-5">
+            <CardContent className="p-4 sm:p-5">
+              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="text-[14px] font-semibold text-foreground">
+                  Missing reports · Week {selectedReportWeek.week_number}
+                </h2>
+                <span className="nums text-[12px] text-muted-foreground">
+                  {missingMembers.length} of {activeMembers.length} active members
+                </span>
+              </div>
+              {missingMembers.length ? (
+                <ul className="flex flex-wrap gap-x-4 gap-y-2">
+                  {missingMembers.map((member) => (
+                    <li key={member.userId}>
+                      <Link href={`/admin/members/${member.userId}`} className="text-[12px] text-primary hover:underline">
+                        {member.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[12px] text-muted-foreground">Every active member has submitted a report for this week.</p>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <p className="mb-3 text-[12px] text-muted-foreground">
+            Select a week in the report filters below to see active members who have not submitted yet.
+          </p>
+        )}
+
         <ReportsTable
-          reports={reports}
+          reportPage={reportPage}
           weeks={weeks}
           members={activeMembers.map((m) => ({
             id: m.user_id,
-            name: m.profiles?.full_name ?? m.profiles?.email ?? "Unknown",
-            email: m.profiles?.email ?? "",
+            name: m.profiles?.full_name ?? "Member",
           }))}
           weekFilter={weekFilter}
           userFilter={userFilter}
+          searchFilter={searchFilter}
         />
       </>
     );

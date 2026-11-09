@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, PencilLine, Send, ExternalLink } from "lucide-react";
+import { Loader2, PencilLine, Send, ExternalLink, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,10 +30,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   submissionContentSchema,
+  SUBMISSION_FILE_TYPES,
   type SubmissionContentValues,
 } from "@/features/submissions/schemas";
-import { saveSubmissionAction } from "@/features/submissions/actions";
+import {
+  registerSubmissionFileAction,
+  saveSubmissionAction,
+  startSubmissionAction,
+} from "@/features/submissions/actions";
 import type { SubmissionStatus, SubmissionType } from "@/types/database";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 interface SubmissionFormProps {
   assignmentId: string;
@@ -43,7 +49,10 @@ interface SubmissionFormProps {
     status: SubmissionStatus;
     submission_text: string | null;
     submission_url: string | null;
+    files: Array<{ file_name: string }>;
   } | null;
+  teamId: string;
+  userId: string;
 }
 
 const EDITABLE: SubmissionStatus[] = [
@@ -56,10 +65,13 @@ export function SubmissionForm({
   assignmentId,
   requiredSubmissionType,
   existingSubmission,
+  teamId,
+  userId,
 }: SubmissionFormProps) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [pending, startTransition] = useTransition();
+  const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
 
   // Determine the submission_type field default. If the assignment specifies
   // one, use it; else default to external_url (URL is most common).
@@ -107,6 +119,39 @@ export function SubmissionForm({
 
   const onSubmit = (values: SubmissionContentValues) => {
     startTransition(async () => {
+      try {
+        const started = await startSubmissionAction(assignmentId);
+        if (!started.ok || !started.submissionId) {
+          toast.error(started.ok ? "Could not start the submission." : started.error);
+          return;
+        }
+        const submissionId = started.submissionId;
+        if (selectedFiles.length) {
+          const supabase = createSupabaseBrowserClient();
+          for (const file of selectedFiles) {
+            const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120) || "attachment";
+            const path = `${teamId}/${userId}/${submissionId}/${crypto.randomUUID()}-${safeName}`;
+            const { error: uploadError } = await supabase.storage
+              .from("squad-attachments")
+              .upload(path, file, { contentType: file.type, cacheControl: "3600" });
+            if (uploadError) {
+              toast.error("Could not upload a file. Check that the latest Storage migration is installed and retry.");
+              return;
+            }
+            const registered = await registerSubmissionFileAction({
+              submissionId,
+              storagePath: path,
+              fileName: file.name.slice(0, 255),
+              contentType: file.type as (typeof SUBMISSION_FILE_TYPES)[number],
+              fileSize: file.size,
+            });
+            if (!registered.ok) {
+              await supabase.storage.from("squad-attachments").remove([path]);
+              toast.error(registered.error);
+              return;
+            }
+          }
+        }
       const res = await saveSubmissionAction(assignmentId, values);
       if (res.ok) {
         toast.success(
@@ -117,6 +162,9 @@ export function SubmissionForm({
         router.refresh();
       } else {
         toast.error(res.error);
+      }
+      } catch {
+        toast.error("Could not submit your work. Please retry.");
       }
     });
   };
@@ -212,6 +260,50 @@ export function SubmissionForm({
                 )}
               />
             ) : null}
+
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <label htmlFor="submission-files" className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+                <Paperclip className="size-4" />
+                Attach files
+                <input
+                  id="submission-files"
+                  type="file"
+                  multiple
+                  accept={SUBMISSION_FILE_TYPES.join(",")}
+                  className="sr-only"
+                  disabled={pending}
+                  onChange={(event) => {
+                    const picked = Array.from(event.currentTarget.files ?? []);
+                    const invalid = picked.find((file) => !SUBMISSION_FILE_TYPES.includes(file.type as (typeof SUBMISSION_FILE_TYPES)[number]) || file.size > 10 * 1024 * 1024);
+                    if (invalid) {
+                      toast.error("Use a supported file type. Each attachment must be 10 MB or smaller.");
+                    } else if (picked.length + (existingSubmission?.files.length ?? 0) > 10) {
+                      toast.error("A submission can contain at most 10 files.");
+                    } else {
+                      setSelectedFiles(picked);
+                    }
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </label>
+              {existingSubmission?.files.map((file) => (
+                <p key={`existing-${file.file_name}`} className="text-xs text-muted-foreground">Attached: {file.file_name}</p>
+              ))}
+              {selectedFiles.map((file) => (
+                <div key={`${file.name}-${file.lastModified}`} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="truncate">{file.name} · {Math.ceil(file.size / 1024)} KB</span>
+                  <button
+                    type="button"
+                    className="rounded p-1 text-muted-foreground hover:text-foreground"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() => setSelectedFiles((current) => current.filter((item) => item !== file))}
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground">PDF, office documents, text/CSV, ZIP, JPG, PNG, or WebP. Up to 10 files, 10 MB each.</p>
+            </div>
 
             {/* submission_type is fixed per assignment; pass it through hidden. */}
             <input

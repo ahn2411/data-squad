@@ -14,7 +14,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, safeInternalPath } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -131,12 +131,16 @@ export function AppShell({
 
   const handleMarkAll = () => {
     startTransition(async () => {
-      const res = await markAllReadAction();
-      if (res.ok) {
-        toast.success("All notifications marked as read.");
-        router.refresh();
-      } else {
-        toast.error(res.error);
+      try {
+        const res = await markAllReadAction();
+        if (res.ok) {
+          toast.success("All notifications marked as read.");
+          router.refresh();
+        } else {
+          toast.error(res.error);
+        }
+      } catch {
+        toast.error("Could not update notifications. Please try again.");
       }
     });
   };
@@ -145,17 +149,27 @@ export function AppShell({
     n: BellNotification,
     e: React.MouseEvent<HTMLAnchorElement>,
   ) => {
-    if (!n.link) return;
+    const href = safeInternalPath(n.link);
+    if (!href) {
+      e.preventDefault();
+      toast.error("This notification link is unavailable.");
+      return;
+    }
     if (n.read_at === null) {
       // Mark read first, then navigate.
       e.preventDefault();
       setBusyId(n.id);
       startTransition(async () => {
-        const res = await markNotificationReadAction(n.id);
-        if (!res.ok) toast.error(res.error);
-        router.push(n.link as string);
-        router.refresh();
-        setBusyId(null);
+        try {
+          const res = await markNotificationReadAction(n.id);
+          if (!res.ok) toast.error(res.error);
+        } catch {
+          toast.error("Could not update notification status.");
+        } finally {
+          router.push(href);
+          router.refresh();
+          setBusyId(null);
+        }
       });
     }
   };
@@ -361,9 +375,9 @@ export function AppShell({
                           key={n.id}
                           className="border-b border-border last:border-b-0"
                         >
-                          {n.link ? (
+                          {safeInternalPath(n.link) ? (
                             <a
-                              href={n.link}
+                              href={safeInternalPath(n.link) ?? undefined}
                               onClick={(e) => handleNotificationClick(n, e)}
                               className={rowClassName}
                             >

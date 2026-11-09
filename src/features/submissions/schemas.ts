@@ -19,6 +19,28 @@ export const REVIEW_STATUSES: ReviewStatus[] = [
   "rejected",
 ];
 
+export const SUBMISSION_FILE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "application/zip",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+] as const;
+
+export const submissionFileSchema = z.object({
+  submissionId: z.string().uuid(),
+  storagePath: z.string().max(600),
+  fileName: z.string().min(1).max(255),
+  contentType: z.enum(SUBMISSION_FILE_TYPES),
+  fileSize: z.number().int().positive().max(10 * 1024 * 1024),
+});
+
+export type SubmissionFileValues = z.infer<typeof submissionFileSchema>;
+
 /**
  * Submission content. Depending on the assignment's required_submission_type,
  * the member supplies text, a URL, or both (URL is primary for github_repo /
@@ -38,13 +60,7 @@ export const submissionContentSchema = z
       )
       .optional()
       .or(z.literal("")),
-  })
-  .refine(
-    (v) =>
-      (v.submission_text && v.submission_text.trim().length > 0) ||
-      (v.submission_url && v.submission_url.trim().length > 0),
-    { message: "Add submission text or a URL." },
-  );
+  });
 
 export type SubmissionContentValues = z.infer<typeof submissionContentSchema>;
 

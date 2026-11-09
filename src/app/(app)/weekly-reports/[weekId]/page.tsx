@@ -7,6 +7,7 @@ import {
   FileText,
   CheckCircle2,
   MessageSquare,
+  LockKeyhole,
 } from "lucide-react";
 import { requireActiveMember } from "@/features/auth/session";
 import { PageHeader } from "@/components/page-header";
@@ -25,6 +26,7 @@ import {
 import { ReportForm } from "./report-form";
 import { LeaderFeedbackForm } from "./leader-feedback-form";
 import { formatDateTime, initials } from "@/lib/format";
+import { getWeeklyReportEditDeadline } from "@/features/reports/policy";
 
 export const metadata = { title: "Weekly report" };
 
@@ -151,10 +153,11 @@ export default async function WeeklyReportDetailPage({
           <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
             <ReportReadonlyView report={report} />
             <LeaderFeedbackForm
+              key={`${report.id}:${report.leader_feedback ?? ""}`}
               reportId={report.id}
               defaultFeedback={report.leader_feedback ?? ""}
               memberName={
-                report.profiles?.full_name ?? report.profiles?.email ?? "Member"
+                report.profiles?.full_name ?? "Member"
               }
             />
           </div>
@@ -191,6 +194,10 @@ export default async function WeeklyReportDetailPage({
   }
 
   const objectives = week.objectives ?? [];
+  const editDeadline = myReport
+    ? getWeeklyReportEditDeadline(myReport.submitted_at)
+    : null;
+  const reportLocked = editDeadline !== null && editDeadline.getTime() <= Date.now();
 
   return (
     <>
@@ -214,11 +221,35 @@ export default async function WeeklyReportDetailPage({
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">
-          <ReportForm
-            weekId={week.id}
-            existing={myReport}
-            submitted={Boolean(myReport)}
-          />
+          {reportLocked ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-1.5 text-[14px]">
+                  <LockKeyhole className="size-4 text-muted-foreground" />
+                  Report locked
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                  The 7-day edit window ended {editDeadline.toLocaleString("en-US", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                    timeZone: "UTC",
+                  })} UTC.
+                  Your submitted report remains available to you and your team leaders.
+                </p>
+                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                  A leader can still add feedback. Contact a team administrator if a correction is necessary.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <ReportForm
+              weekId={week.id}
+              existing={myReport}
+              submitted={Boolean(myReport)}
+            />
+          )}
 
           {/* If leader feedback exists, show it (read-only). */}
           {myReport?.leader_feedback ? (
@@ -313,11 +344,11 @@ function ReportReadonlyView({ report }: { report: ReportWithProfile }) {
           <div className="flex items-center gap-2">
             <Avatar className="size-7 border border-border">
               <AvatarFallback className="bg-primary/10 text-[11px] font-medium text-primary">
-                {initials(report.profiles?.full_name ?? report.profiles?.email ?? "?")}
+                {initials(report.profiles?.full_name ?? "?")}
               </AvatarFallback>
             </Avatar>
             <span className="text-[13px] font-medium">
-              {report.profiles?.full_name ?? report.profiles?.email ?? "Member"}
+              {report.profiles?.full_name ?? "Member"}
             </span>
           </div>
         </ReportField>

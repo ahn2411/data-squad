@@ -28,6 +28,7 @@ const blockerStatusConfig: Record<
   open: { tone: "warning", label: "Open" },
   being_addressed: { tone: "navy", label: "Being addressed" },
   resolved: { tone: "success", label: "Resolved" },
+  closed: { tone: "muted", label: "Closed" },
 };
 
 export function BlockerStatusBadge({ status }: { status: BlockerStatus }) {
@@ -108,6 +109,21 @@ const notificationConfig: Record<
     tone: "warning",
   },
   new_announcement: { icon: Megaphone, label: "Announcement", tone: "teal" },
+  submission_received: {
+    icon: ClipboardList,
+    label: "Submission received",
+    tone: "navy",
+  },
+  discussion_reply: {
+    icon: AlertCircle,
+    label: "Discussion reply",
+    tone: "teal",
+  },
+  blocker_response: {
+    icon: AlertCircle,
+    label: "Blocker response",
+    tone: "warning",
+  },
   weekly_report_due: { icon: CalendarClock, label: "Weekly report due", tone: "warning" },
   blocker_updated: { icon: AlertCircle, label: "Blocker updated", tone: "navy" },
   pending_member_review: {

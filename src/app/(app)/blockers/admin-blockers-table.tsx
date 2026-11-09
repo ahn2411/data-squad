@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Search,
   ArrowRight,
@@ -9,6 +10,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -35,41 +37,68 @@ import type { BlockerStatus, BlockerPriority } from "@/types/database";
 
 interface AdminBlockersTableProps {
   blockers: BlockerWithMeta[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  openCount: number;
+  initialSearch: string;
+  initialStatus: StatusFilter;
+  initialPriority: PriorityFilter;
 }
 
 type StatusFilter = "all" | BlockerStatus;
 type PriorityFilter = "all" | BlockerPriority;
 
-export function AdminBlockersTable({ blockers }: AdminBlockersTableProps) {
-  const [search, setSearch] = React.useState("");
-  const [status, setStatus] = React.useState<StatusFilter>("all");
-  const [priority, setPriority] = React.useState<PriorityFilter>("all");
+export function AdminBlockersTable({
+  blockers,
+  totalCount,
+  page,
+  pageSize,
+  openCount,
+  initialSearch,
+  initialStatus,
+  initialPriority,
+}: AdminBlockersTableProps) {
+  const router = useRouter();
+  const [search, setSearch] = React.useState(initialSearch);
+  const [status, setStatus] = React.useState<StatusFilter>(initialStatus);
+  const [priority, setPriority] = React.useState<PriorityFilter>(initialPriority);
 
-  const filtered = React.useMemo(() => {
-    let rows = blockers;
-    if (status !== "all") {
-      rows = rows.filter((b) => b.status === status);
-    }
-    if (priority !== "all") {
-      rows = rows.filter((b) => b.priority === priority);
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      rows = rows.filter(
-        (b) =>
-          b.title.toLowerCase().includes(q) ||
-          (b.description ?? "").toLowerCase().includes(q) ||
-          (b.error_messages ?? "").toLowerCase().includes(q) ||
-          (b.reporter?.email ?? "").toLowerCase().includes(q) ||
-          (b.reporter?.full_name ?? "").toLowerCase().includes(q),
-      );
-    }
-    return rows;
-  }, [blockers, search, status, priority]);
+  React.useEffect(() => {
+    const syncFromHistory = () => {
+      const params = new URLSearchParams(window.location.search);
+      const nextStatus = params.get("status");
+      const nextPriority = params.get("priority");
+      setSearch(params.get("search") ?? "");
+      setStatus(nextStatus && ["all", "open", "being_addressed", "resolved", "closed"].includes(nextStatus)
+        ? nextStatus as StatusFilter : "all");
+      setPriority(nextPriority && ["all", "low", "medium", "high", "critical"].includes(nextPriority)
+        ? nextPriority as PriorityFilter : "all");
+    };
+    window.addEventListener("popstate", syncFromHistory);
+    return () => window.removeEventListener("popstate", syncFromHistory);
+  }, []);
 
-  const openCount = blockers.filter((b) => b.status !== "resolved").length;
+  React.useEffect(() => {
+    const normalizedSearch = search.trim().slice(0, 120);
+    const params = new URLSearchParams();
+    if (normalizedSearch) params.set("search", normalizedSearch);
+    if (status !== "all") params.set("status", status);
+    if (priority !== "all") params.set("priority", priority);
+    const current = new URLSearchParams(window.location.search);
+    const currentSearch = (current.get("search") ?? "").trim().slice(0, 120);
+    const currentStatus = current.get("status") ?? "all";
+    const currentPriority = current.get("priority") ?? "all";
+    if (currentSearch === normalizedSearch && currentStatus === status && currentPriority === priority) {
+      const currentPage = current.get("page");
+      if (currentPage) params.set("page", currentPage);
+    }
+    const query = params.toString();
+    router.replace(query ? `/blockers?${query}` : "/blockers", { scroll: false });
+  }, [search, status, priority, router]);
 
-  if (blockers.length === 0) {
+  const hasFilters = Boolean(search.trim()) || status !== "all" || priority !== "all";
+  if (totalCount === 0 && !hasFilters) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-10 text-center">
         <TriangleAlert className="size-6 text-muted-foreground" />
@@ -107,6 +136,7 @@ export function AdminBlockersTable({ blockers }: AdminBlockersTableProps) {
               <SelectItem value="open">Open</SelectItem>
               <SelectItem value="being_addressed">Being addressed</SelectItem>
               <SelectItem value="resolved">Resolved</SelectItem>
+              <SelectItem value="closed">Closed</SelectItem>
             </SelectContent>
           </Select>
           <Select value={priority} onValueChange={(v) => setPriority(v as PriorityFilter)}>
@@ -123,8 +153,8 @@ export function AdminBlockersTable({ blockers }: AdminBlockersTableProps) {
           </Select>
         </div>
         <span className="text-[12px] text-muted-foreground">
-          <span className="nums font-medium text-foreground">{filtered.length}</span>{" "}
-          {filtered.length === 1 ? "blocker" : "blockers"}
+          <span className="nums font-medium text-foreground">{totalCount}</span>{" "}
+          {totalCount === 1 ? "blocker" : "blockers"}
           {openCount > 0 ? (
             <>
               <span className="text-muted-foreground/50">·</span>{" "}
@@ -149,7 +179,7 @@ export function AdminBlockersTable({ blockers }: AdminBlockersTableProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {blockers.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={7} className="py-8 text-center">
                   <p className="text-[13px] text-muted-foreground">
@@ -158,9 +188,8 @@ export function AdminBlockersTable({ blockers }: AdminBlockersTableProps) {
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((b) => {
-                const name = b.reporter?.full_name ?? b.reporter?.email ?? "Member";
-                const email = b.reporter?.email ?? "";
+              blockers.map((b) => {
+                const name = b.reporter?.full_name ?? "Member";
                 const commentHint = ""; // count not fetched in list; left blank
                 return (
                   <TableRow key={b.id} className="group cursor-pointer">
@@ -171,7 +200,7 @@ export function AdminBlockersTable({ blockers }: AdminBlockersTableProps) {
                         aria-label={`Open ${b.title}`}
                       >
                         <div className="flex items-center gap-2 text-[13px] font-medium text-foreground">
-                          {b.status === "resolved" ? null : (
+                          {b.status === "resolved" || b.status === "closed" ? null : (
                             <TriangleAlert
                               className={
                                 b.priority === "critical"
@@ -216,9 +245,6 @@ export function AdminBlockersTable({ blockers }: AdminBlockersTableProps) {
                           <p className="truncate text-[12px] font-medium text-foreground">
                             {name}
                           </p>
-                          <p className="truncate text-[11px] text-muted-foreground">
-                            {email}
-                          </p>
                         </div>
                       </div>
                     </TableCell>
@@ -236,7 +262,7 @@ export function AdminBlockersTable({ blockers }: AdminBlockersTableProps) {
                     <TableCell className="text-[12px] text-muted-foreground">
                       {b.helper ? (
                         <span className="font-medium text-foreground">
-                          {b.helper.full_name ?? b.helper.email}
+                          {b.helper.full_name ?? "Member"}
                         </span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
@@ -258,6 +284,26 @@ export function AdminBlockersTable({ blockers }: AdminBlockersTableProps) {
           </TableBody>
         </Table>
       </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 text-[12px] text-muted-foreground">
+        <span>
+          Showing {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}–
+          {Math.min(page * pageSize, totalCount)} of {totalCount} blockers
+        </span>
+        <div className="flex gap-2">
+          {page > 1 ? <Button asChild size="sm" variant="outline"><Link href={adminBlockerPageHref(search, status, priority, page - 1)}>Previous</Link></Button> : null}
+          {page * pageSize < totalCount ? <Button asChild size="sm" variant="outline"><Link href={adminBlockerPageHref(search, status, priority, page + 1)}>Next</Link></Button> : null}
+        </div>
+      </div>
     </div>
   );
+}
+
+function adminBlockerPageHref(search: string, status: StatusFilter, priority: PriorityFilter, page: number): string {
+  const params = new URLSearchParams();
+  if (search.trim()) params.set("search", search.trim());
+  if (status !== "all") params.set("status", status);
+  if (priority !== "all") params.set("priority", priority);
+  params.set("page", String(page));
+  return `/blockers?${params.toString()}`;
 }

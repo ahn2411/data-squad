@@ -28,8 +28,26 @@ export async function updateProfileAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
+  const avatarPath = parsed.data.avatarPath || null;
+  if (avatarPath) {
+    const allowedPath = new RegExp(
+      `^${ctx.membership.team_id}/${ctx.userId}/avatar\\.(?:jpg|png|webp)$`,
+    );
+    if (!allowedPath.test(avatarPath)) {
+      return { ok: false, error: "Choose a valid profile image before saving." };
+    }
+    const supabase = await createSupabaseServerClient();
+    const folder = `${ctx.membership.team_id}/${ctx.userId}`;
+    const { data: objects, error: storageError } = await supabase.storage
+      .from("squad-avatars")
+      .list(folder, { search: avatarPath.split("/").at(-1) });
+    if (storageError || !objects?.some((object) => `${folder}/${object.name}` === avatarPath)) {
+      return { ok: false, error: "The uploaded profile image could not be verified." };
+    }
+  }
+
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("profiles")
     .update({
       full_name: parsed.data.fullName,
@@ -37,9 +55,13 @@ export async function updateProfileAction(
       bio: parsed.data.bio || null,
       github_username: parsed.data.githubUsername || null,
       github_profile_url: parsed.data.githubProfileUrl || null,
+      capstone_repository_url: parsed.data.capstoneRepositoryUrl || null,
+      avatar_url: avatarPath,
       timezone: parsed.data.timezone,
     })
-    .eq("id", ctx.userId); // RLS also enforces id = auth.uid()
+    .eq("id", ctx.userId) // RLS also enforces id = auth.uid()
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     if (error.code === "23505") {
@@ -48,7 +70,10 @@ export async function updateProfileAction(
     return { ok: false, error: "Could not save the profile." };
   }
 
+  if (!updated) return { ok: false, error: "Could not find your profile to update." };
+
   revalidatePath("/profile");
+  revalidatePath("/github");
   revalidatePath("/dashboard");
   return { ok: true };
 }

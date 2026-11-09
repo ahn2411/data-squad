@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { ArrowRight, ChevronRight, Info, Map, Sparkles } from "lucide-react";
+import { ArrowRight, ChevronRight, Info, Map, Search, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { requireActiveMember } from "@/features/auth/session";
 import {
@@ -11,16 +12,24 @@ import {
   getWeeks,
   getTopics,
   getTopicProgressForUser,
+  getWeekProgressForUser,
   getCurrentWeek,
   type WeekWithPhase,
 } from "@/features/roadmap/queries";
 import { PhaseStatusBadge } from "@/features/roadmap/status-badges";
-import { formatDate, percent } from "@/lib/format";
+import { formatDate, formatStudyTime, percent } from "@/lib/format";
 import type { Phase, Topic, TopicProgress } from "@/types/database";
 
 export const metadata = { title: "Learning roadmap" };
 
-export default async function RoadmapPage() {
+interface RoadmapPageProps {
+  searchParams: Promise<{ q?: string }>;
+}
+
+export default async function RoadmapPage({ searchParams }: RoadmapPageProps) {
+  const { q: rawQuery } = await searchParams;
+  const query = rawQuery?.trim().slice(0, 100) ?? "";
+  const normalizedQuery = query.toLocaleLowerCase();
   const session = await requireActiveMember();
   const isLeaderOrAdmin =
     session.membership.role === "admin" || session.membership.role === "leader";
@@ -31,15 +40,17 @@ export default async function RoadmapPage() {
   let weeks: WeekWithPhase[] = [];
   let topics: Topic[] = [];
   let progress: TopicProgress[] = [];
+  let weekProgress: Awaited<ReturnType<typeof getWeekProgressForUser>> = [];
   let currentWeekId: string | null = null;
   let fetchError: string | null = null;
 
   try {
-    [phases, weeks, topics, progress] = await Promise.all([
+    [phases, weeks, topics, progress, weekProgress] = await Promise.all([
       getPhases(),
       getWeeks(),
       getTopics(),
       getTopicProgressForUser(session.userId),
+      getWeekProgressForUser(session.userId),
     ]);
     const currentWeek = await getCurrentWeek(session.membership.team_id);
     currentWeekId = currentWeek?.id ?? null;
@@ -100,6 +111,53 @@ export default async function RoadmapPage() {
 
   const totalCompleted = topics.filter((t) => completedTopicIds.has(t.id)).length;
   const overallRatio = topics.length > 0 ? totalCompleted / topics.length : 0;
+  const estimatedMinutesByWeek = new globalThis.Map<string, number>();
+  for (const topic of topics) {
+    if (topic.estimated_minutes && topic.estimated_minutes > 0) {
+      estimatedMinutesByWeek.set(
+        topic.week_id,
+        (estimatedMinutesByWeek.get(topic.week_id) ?? 0) + topic.estimated_minutes,
+      );
+    }
+  }
+  const completedWeekIds = new Set(weeks.filter((week) => {
+    const publishedTopics = topics.filter((topic) => topic.week_id === week.id && topic.publication_status === "published");
+    if (publishedTopics.length === 0 || !publishedTopics.every((topic) => completedTopicIds.has(topic.id))) return false;
+    const savedProgress = weekProgress.find((row) => row.week_id === week.id);
+    const checkedDeliverables = savedProgress?.completed_deliverables ?? [];
+    const checkedCriteria = savedProgress?.completed_criteria ?? [];
+    return (week.deliverables ?? []).every((item) => checkedDeliverables.includes(item)) &&
+      (week.completion_criteria ?? []).every((item) => checkedCriteria.includes(item));
+  }).map((week) => week.id));
+
+  const matchingTopicWeekIds = new Set(
+    topics
+      .filter((topic) => topic.title.toLocaleLowerCase().includes(normalizedQuery))
+      .map((topic) => topic.week_id),
+  );
+  const matchingWeeksByPhase = new globalThis.Map<string, WeekWithPhase[]>();
+  for (const week of weeks) {
+    const phaseMatches = phases.some(
+      (phase) => phase.id === week.phase_id &&
+        `${phase.title} ${phase.description ?? ""}`
+          .toLocaleLowerCase()
+          .includes(normalizedQuery),
+    );
+    const weekMatches = `${week.title} ${week.overview ?? ""}`
+      .toLocaleLowerCase()
+      .includes(normalizedQuery);
+    if (!normalizedQuery || phaseMatches || weekMatches || matchingTopicWeekIds.has(week.id)) {
+      const list = matchingWeeksByPhase.get(week.phase_id) ?? [];
+      list.push(week);
+      matchingWeeksByPhase.set(week.phase_id, list);
+    }
+  }
+  const visiblePhases = normalizedQuery
+    ? phases.filter((phase) => matchingWeeksByPhase.has(phase.id))
+    : phases;
+  const matchingWeekCount = normalizedQuery
+    ? [...matchingWeeksByPhase.values()].reduce((total, items) => total + items.length, 0)
+    : weeks.length;
 
   return (
     <>
@@ -117,6 +175,27 @@ export default async function RoadmapPage() {
           ) : undefined
         }
       />
+
+      <form action="/roadmap" method="get" className="mb-5 flex flex-col gap-2 sm:flex-row">
+        <div className="relative min-w-0 flex-1">
+          <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            name="q"
+            defaultValue={query}
+            placeholder="Search phases, weeks, and topics…"
+            aria-label="Search learning phases, weeks, and topics"
+            className="pl-9"
+          />
+        </div>
+        <Button type="submit" variant="outline">Search roadmap</Button>
+        {query ? <Button asChild type="button" variant="ghost"><Link href="/roadmap">Clear</Link></Button> : null}
+      </form>
+      {query ? (
+        <p className="mb-4 text-[12px] text-muted-foreground" aria-live="polite">
+          {matchingWeekCount} matching {matchingWeekCount === 1 ? "week" : "weeks"} across {visiblePhases.length} {visiblePhases.length === 1 ? "phase" : "phases"}.
+        </p>
+      ) : null}
 
       {/* Overall progress summary */}
       <Card className="mb-6 overflow-hidden">
@@ -146,15 +225,18 @@ export default async function RoadmapPage() {
 
       {/* Phases */}
       <div className="space-y-6">
-        {phases.map((phase) => {
-          const phaseWeeks = weeks.filter((w) => w.phase_id === phase.id);
+        {visiblePhases.length === 0 ? (
+          <Card><CardContent className="p-8 text-center text-[13px] text-muted-foreground">No phases, weeks, or topics match “{query}”.</CardContent></Card>
+        ) : visiblePhases.map((phase) => {
+          const phaseWeeks = weeks.filter((week) => week.phase_id === phase.id);
+          const visibleWeeks = matchingWeeksByPhase.get(phase.id) ?? [];
           const phaseWeekIds = new Set(phaseWeeks.map((w) => w.id));
           const phaseTopics = topics.filter((t) => phaseWeekIds.has(t.week_id));
           const completed = phaseTopics.filter((t) =>
             completedTopicIds.has(t.id),
           ).length;
-          const ratio =
-            phaseTopics.length > 0 ? completed / phaseTopics.length : 0;
+          const completedPhaseWeeks = phaseWeeks.filter((week) => completedWeekIds.has(week.id)).length;
+          const ratio = phaseWeeks.length > 0 ? completedPhaseWeeks / phaseWeeks.length : 0;
 
           return (
             <section
@@ -196,28 +278,30 @@ export default async function RoadmapPage() {
                   </div>
                   <Progress value={ratio * 100} className="mt-1.5 h-1.5" />
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    {completed}/{phaseTopics.length} completed
+                    {completedPhaseWeeks}/{phaseWeeks.length} weeks complete · {completed}/{phaseTopics.length} topics
                   </p>
                 </div>
               </header>
 
               {/* Weeks */}
-              {phaseWeeks.length === 0 ? (
+              {visibleWeeks.length === 0 ? (
                 <div className="p-4 text-[13px] text-muted-foreground sm:p-6">
                   No weeks in this phase yet.
                 </div>
               ) : (
                 <ul className="divide-y divide-border">
-                  {phaseWeeks.map((week) => {
+                  {visibleWeeks.map((week) => {
                     const isCurrent = week.id === currentWeekId;
                     const weekTopicCount = topics.filter(
                       (t) => t.week_id === week.id,
                     ).length;
+                    const studyTime = formatStudyTime(estimatedMinutesByWeek.get(week.id));
                     const weekCompleted = topics.filter(
                       (t) =>
                         t.week_id === week.id &&
                         completedTopicIds.has(t.id),
                     ).length;
+                    const isComplete = completedWeekIds.has(week.id);
                     return (
                       <li key={week.id}>
                         <Link
@@ -241,9 +325,11 @@ export default async function RoadmapPage() {
                             <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
                               {weekTopicCount}{" "}
                               {weekTopicCount === 1 ? "topic" : "topics"}
+                              {studyTime ? ` · about ${studyTime}` : ""}
                               {weekCompleted > 0
                                 ? ` · ${weekCompleted} completed`
                                 : ""}
+                              {isComplete ? " · Week complete" : ""}
                               {week.start_date
                                 ? ` · starts ${formatDate(week.start_date)}`
                                 : ""}

@@ -15,11 +15,9 @@ export const metadata = { title: "Roadmap manager" };
 /**
  * Admin/leader roadmap manager.
  *
- * SCOPED-DOWN NOTE: This view provides full CRUD + publish/unpublish for
- * phases, weeks, and topics. Learning resources are managed inline per-topic
- * (create + delete) — editing existing resources is not yet wired into a
- * dialog; delete + re-create is the supported path. team_settings.current_week
- * is not editable here (it's an admin Settings concern).
+ * This view provides CRUD + publish/unpublish for phases, weeks, topics, and
+ * topic learning resources. team_settings.current_week remains outside this
+ * curriculum editor.
  */
 export default async function AdminRoadmapPage() {
   const session = await requireActiveMember();

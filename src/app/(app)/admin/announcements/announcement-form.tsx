@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2, Save, Send, X } from "lucide-react";
@@ -99,6 +99,7 @@ export function AnnouncementForm({
       status: defaults?.status ?? "draft",
     },
   });
+  const currentStatus = useWatch({ control: form.control, name: "status" });
 
   React.useEffect(() => {
     if (open) {
@@ -283,12 +284,12 @@ export function AnnouncementForm({
               <Button type="submit" disabled={pending}>
                 {pending ? (
                   <Loader2 className="size-4 animate-spin" />
-                ) : form.watch("status") === "published" ? (
+                ) : currentStatus === "published" ? (
                   <Send className="size-4" />
                 ) : (
                   <Save className="size-4" />
                 )}
-                {form.watch("status") === "published"
+                {currentStatus === "published"
                   ? mode === "create"
                     ? "Publish"
                     : "Update"

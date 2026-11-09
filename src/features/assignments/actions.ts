@@ -126,9 +126,10 @@ export async function createAssignmentAction(
     supporting_resources: v.supporting_resources,
     deliverables: v.deliverables,
     evaluation_criteria: v.evaluation_criteria,
-    publication_status: v.publication_status,
-    published_at:
-      v.publication_status === "published" ? new Date().toISOString() : null,
+    // Insert unpublished first so recipient rows are committed before the
+    // publication trigger fans out notifications.
+    publication_status: "draft",
+    published_at: null,
     deadline: nullIfEmpty(v.deadline),
     created_by: leader.userId,
     display_order: 0,
@@ -161,6 +162,23 @@ export async function createAssignmentAction(
       revalidatePath("/admin/assignments");
       revalidatePath("/assignments");
       return { ok: false, error: recRes.error };
+    }
+  }
+
+  if (v.publication_status === "published") {
+    const { error: publishError } = await supabase
+      .from("assignments")
+      .update({
+        publication_status: "published",
+        published_at: new Date().toISOString(),
+      })
+      .eq("id", data.id);
+    if (publishError) {
+      revalidatePath("/admin/assignments");
+      return {
+        ok: false,
+        error: mapAssignmentError(publishError, "Could not publish the assignment."),
+      };
     }
   }
 
@@ -198,6 +216,21 @@ export async function updateAssignmentAction(
   const wasPublished = current.publication_status === "published";
   const nowPublished = v.publication_status === "published";
 
+  // On a draft → published transition, save the intended audience before
+  // changing publication_status. The database notification trigger runs on
+  // that transition and must see the final recipient set.
+  let recipientsSavedBeforePublish = false;
+  if (!wasPublished && nowPublished) {
+    const recRes = await replaceRecipients(
+      supabase,
+      v.id,
+      v.recipientUserIds,
+      leader.teamId,
+    );
+    if (!recRes.ok) return { ok: false, error: recRes.error };
+    recipientsSavedBeforePublish = true;
+  }
+
   const updateRow: AssignmentUpdate = {
     title: v.title,
     description: nullIfEmpty(v.description),
@@ -234,16 +267,18 @@ export async function updateAssignmentAction(
   }
 
   // Replace recipients on every save (covers the case where recipients changed).
-  const recRes = await replaceRecipients(
-    supabase,
-    v.id,
-    v.recipientUserIds,
-    leader.teamId,
-  );
-  if (!recRes.ok) {
-    revalidatePath("/admin/assignments");
-    revalidatePath("/assignments");
-    return { ok: false, error: recRes.error };
+  if (!recipientsSavedBeforePublish) {
+    const recRes = await replaceRecipients(
+      supabase,
+      v.id,
+      v.recipientUserIds,
+      leader.teamId,
+    );
+    if (!recRes.ok) {
+      revalidatePath("/admin/assignments");
+      revalidatePath("/assignments");
+      return { ok: false, error: recRes.error };
+    }
   }
 
   revalidatePath("/admin/assignments");
@@ -358,10 +393,8 @@ export async function deleteAssignmentAction(
 
 /**
  * Translate PostgREST errors into friendly messages.
- * The migration's assignments_notify trigger references `new.status`
- * (a non-existent column on `assignments`); that surfaces as a 42883
- * ("function / does not exist") or P0001 ("record new has no field…").
- * We surface a clear, actionable message when that pattern appears.
+ * Detect only the specific stale deployed trigger error; unrelated Postgres
+ * errors must retain their normal fallback instead of being mislabeled.
  */
 function mapAssignmentError(
   error: { code?: string; message?: string } | null | undefined,
@@ -369,15 +402,8 @@ function mapAssignmentError(
 ): string {
   if (!error) return fallback;
   const msg = (error.message ?? "").toLowerCase();
-  const code = error.code ?? "";
-  if (
-    code === "42883" ||
-    code === "42P10" ||
-    code === "P0001" ||
-    msg.includes("has no field") ||
-    msg.includes("does not exist")
-  ) {
-    return "Database trigger error on the assignments table. The notify_on_assignment_publish trigger references a non-existent column; ask an administrator to recreate it using publication_status instead of status.";
+  if (/record\s+["']?new["']?\s+has no field\s+["']?status["']?/.test(msg)) {
+    return "The assignment notification trigger is outdated. Apply migration 0023_assignment_notification_recipient_scope.sql, then retry.";
   }
   return fallback;
 }

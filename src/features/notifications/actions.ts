@@ -56,7 +56,7 @@ export async function markNotificationReadAction(
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
     .eq("id", id)
-    .is("read_at", "null");
+    .is("read_at", null);
 
   if (error) return { ok: false, error: "Could not mark the notification." };
 
@@ -67,7 +67,7 @@ export async function markNotificationReadAction(
 
 /**
  * Mark all of the current user's unread notifications as read.
- * RLS: user_id = auth.uid(); the .is("read_at", "null") narrows to unread.
+ * RLS: user_id = auth.uid(); the IS NULL predicate narrows to unread.
  */
 export async function markAllReadAction(): Promise<NotificationActionResult> {
   const user = await requireActive();
@@ -77,7 +77,7 @@ export async function markAllReadAction(): Promise<NotificationActionResult> {
   const { error } = await supabase
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
-    .is("read_at", "null");
+    .is("read_at", null);
 
   if (error) return { ok: false, error: "Could not mark all as read." };
 

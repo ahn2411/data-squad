@@ -105,7 +105,7 @@ export function BlockerComments({
         ) : (
           <ul className="space-y-4">
             {comments.map((c) => {
-              const name = c.author?.full_name ?? c.author?.email ?? "Member";
+              const name = c.author?.full_name ?? "Member";
               const isOwn = c.author?.id === currentUserId;
               return (
                 <li key={c.id} className="flex gap-3">

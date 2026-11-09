@@ -14,6 +14,7 @@ const PUBLIC_ROUTES = [
   "/forgot-password",
   "/reset-password",
   "/pending-approval",
+  "/auth/callback",
 ];
 
 function isPublicRoute(pathname: string): boolean {
@@ -28,6 +29,16 @@ function isPublicRoute(pathname: string): boolean {
 export async function updateSession(request: NextRequest) {
   if (!isSupabaseConfigured()) {
     return NextResponse.next();
+  }
+
+  // Some Supabase email templates fall back to Site URL and deliver the PKCE
+  // code to `/`. Forward it to the public callback before the auth gate can
+  // redirect the unauthenticated request to login and discard the code.
+  if (request.nextUrl.pathname === "/" && request.nextUrl.searchParams.has("code")) {
+    const callbackUrl = request.nextUrl.clone();
+    callbackUrl.pathname = "/auth/callback";
+    if (!callbackUrl.searchParams.has("next")) callbackUrl.searchParams.set("next", "/");
+    return NextResponse.redirect(callbackUrl);
   }
 
   let supabaseResponse = NextResponse.next({ request });

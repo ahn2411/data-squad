@@ -51,7 +51,7 @@ export default async function ThreadPage({ params }: PageProps) {
   }
 
   const authorName =
-    thread.author?.full_name ?? thread.author?.email ?? "Member";
+    thread.author?.full_name ?? "Member";
   const isPinned = Boolean(thread.pinned_at);
   const isLocked = Boolean(thread.locked_at);
   const isAuthor = thread.created_by === session.userId;

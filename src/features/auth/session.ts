@@ -13,11 +13,13 @@ export type SessionStatus =
   | "removed"
   | "active";
 
+type SafeProfile = Omit<Profile, "email" | "timezone">;
+
 export interface ActiveSession {
   status: "active";
   userId: string;
   email: string;
-  profile: Profile;
+  profile: SafeProfile;
   membership: TeamMember & { teams: Team | null };
 }
 
@@ -25,7 +27,7 @@ export interface InactiveSession {
   status: "no-membership" | "pending" | "suspended" | "removed";
   userId: string;
   email: string;
-  profile: Profile | null;
+  profile: SafeProfile | null;
   membership: TeamMember | null;
   membershipStatus: MembershipStatus | null;
 }
@@ -49,7 +51,12 @@ export const getSessionContext = cache(
     const supabase = await createSupabaseServerClient();
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
+
+    if (authError) {
+      throw new Error("Could not verify your session. Please try again.");
+    }
 
     if (!user) {
       return { status: "unauthenticated" };
@@ -62,7 +69,7 @@ export const getSessionContext = cache(
     const [profileResult, membershipResult] = await Promise.all([
       supabase
         .from("profiles")
-        .select("*")
+        .select("id, full_name, username, avatar_url, bio, github_username, github_profile_url, created_at, updated_at, capstone_repository_url")
         .eq("id", user.id)
         .single(),
       supabase
@@ -71,6 +78,9 @@ export const getSessionContext = cache(
         .eq("user_id", user.id)
         .maybeSingle(),
     ]);
+    if (profileResult.error || membershipResult.error) {
+      throw new Error("Could not verify your account access. Please try again.");
+    }
     const { data: profile } = profileResult;
     const { data: membership } = membershipResult;
 
@@ -91,7 +101,7 @@ export const getSessionContext = cache(
         status: "active",
         userId: user.id,
         email,
-        profile: (profile as Profile) ?? null,
+        profile: (profile as SafeProfile) ?? null,
         membership: membership as TeamMember & { teams: Team | null },
       };
     }
@@ -108,7 +118,7 @@ export const getSessionContext = cache(
       status: bucket,
       userId: user.id,
       email,
-      profile: (profile as Profile) ?? null,
+      profile: (profile as SafeProfile) ?? null,
       membership: membership as TeamMember,
       membershipStatus: status,
     };

@@ -11,8 +11,10 @@ import {
   CheckCircle2,
   AlertCircle,
   ExternalLink,
+  Download,
 } from "lucide-react";
 import { requireActiveMember } from "@/features/auth/session";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -69,6 +71,16 @@ export default async function AssignmentDetailPage({ params }: PageProps) {
     notFound();
   }
 
+  const supabase = await createSupabaseServerClient();
+  const assignmentFiles = await Promise.all(
+    assignment.assignment_files.map(async (file) => {
+      const { data } = await supabase.storage
+        .from("squad-attachments")
+        .createSignedUrl(file.storage_path, 300, { download: true });
+      return data?.signedUrl ? { ...file, signedUrl: data.signedUrl } : null;
+    }),
+  );
+
   const sub = assignment.my_submission;
   const isOverdue =
     assignment.deadline !== null &&
@@ -106,6 +118,8 @@ export default async function AssignmentDetailPage({ params }: PageProps) {
           <SubmissionForm
             assignmentId={assignment.id}
             requiredSubmissionType={assignment.required_submission_type}
+            teamId={session.membership.team_id}
+            userId={session.userId}
             existingSubmission={
               sub
                 ? {
@@ -113,6 +127,9 @@ export default async function AssignmentDetailPage({ params }: PageProps) {
                     status: sub.status,
                     submission_text: sub.submission_text,
                     submission_url: sub.submission_url,
+                    files: sub.submission_files.map((file) => ({
+                      file_name: file.file_name,
+                    })),
                   }
                 : null
             }
@@ -331,6 +348,34 @@ export default async function AssignmentDetailPage({ params }: PageProps) {
                       </a>
                     </li>
                   ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {assignmentFiles.some(Boolean) ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-1.5 text-[14px]">
+                  <ExternalLink className="size-4 text-muted-foreground" />
+                  Assignment files
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {assignmentFiles.map((file) => file ? (
+                    <li key={file.id}>
+                      <a
+                        href={file.signedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-start gap-1.5 break-all text-[13px] text-primary underline-offset-2 hover:underline"
+                      >
+                        <Download className="mt-0.5 size-3.5 shrink-0" />
+                        {file.file_name}
+                      </a>
+                    </li>
+                  ) : null)}
                 </ul>
               </CardContent>
             </Card>

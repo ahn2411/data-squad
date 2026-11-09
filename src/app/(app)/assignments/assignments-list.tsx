@@ -6,12 +6,12 @@ import { useRouter } from "next/navigation";
 import {
   ClipboardList,
   Search,
-  Loader2,
   AlertCircle,
   Clock,
   ArrowRight,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -37,76 +37,66 @@ import { formatDate } from "@/lib/format";
 import type { AssignmentWithMySubmission } from "@/features/assignments/queries";
 import type { SubmissionStatus } from "@/types/database";
 
+export type StatusFilter = "all" | "pending" | "submitted" | "approved" | "overdue";
+
 interface AssignmentsListProps {
   assignments: AssignmentWithMySubmission[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
   loadError: string | null;
+  initialSearch: string;
+  initialStatus: StatusFilter;
 }
 
-type StatusFilter = "all" | "pending" | "submitted" | "approved" | "overdue";
-
-export function AssignmentsList({ assignments, loadError }: AssignmentsListProps) {
+export function AssignmentsList({
+  assignments,
+  totalCount,
+  page,
+  pageSize,
+  loadError,
+  initialSearch,
+  initialStatus,
+}: AssignmentsListProps) {
   const router = useRouter();
-  const [search, setSearch] = React.useState("");
-  const [status, setStatus] = React.useState<StatusFilter>("all");
+  const [search, setSearch] = React.useState(initialSearch);
+  const [status, setStatus] = React.useState<StatusFilter>(initialStatus);
 
-  // Sync filters to the URL query so refresh + share work.
+  // Restore filters when the user navigates back/forward through history.
   React.useEffect(() => {
-    const sp = new URLSearchParams(window.location.search);
-    const s = sp.get("search");
-    const st = sp.get("status") as StatusFilter | null;
-    if (s) setSearch(s);
-    if (st && ["all", "pending", "submitted", "approved", "overdue"].includes(st)) {
-      setStatus(st);
-    }
+    const syncFromHistory = () => {
+      const params = new URLSearchParams(window.location.search);
+      const nextStatus = params.get("status");
+      setSearch(params.get("search") ?? "");
+      setStatus(
+        nextStatus && ["all", "pending", "submitted", "approved", "overdue"].includes(nextStatus)
+          ? (nextStatus as StatusFilter)
+          : "all",
+      );
+    };
+    window.addEventListener("popstate", syncFromHistory);
+    return () => window.removeEventListener("popstate", syncFromHistory);
   }, []);
 
   React.useEffect(() => {
     const sp = new URLSearchParams();
-    if (search) sp.set("search", search);
+    const normalizedSearch = search.trim().slice(0, 120);
+    if (normalizedSearch) sp.set("search", normalizedSearch);
     if (status !== "all") sp.set("status", status);
+    const current = new URLSearchParams(window.location.search);
+    const currentSearch = (current.get("search") ?? "").trim().slice(0, 120);
+    const currentStatus = current.get("status") ?? "all";
+    // Preserve the requested page on initial render/history navigation, but
+    // restart at page one when the active filters change.
+    if (currentSearch === normalizedSearch && currentStatus === status) {
+      const currentPage = current.get("page");
+      if (currentPage) sp.set("page", currentPage);
+    }
     const qs = sp.toString();
     router.replace(qs ? `/assignments?${qs}` : "/assignments", { scroll: false });
   }, [search, status, router]);
 
-  const filtered = React.useMemo(() => {
-    let rows = assignments;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      rows = rows.filter(
-        (a) =>
-          a.title.toLowerCase().includes(q) ||
-          (a.description ?? "").toLowerCase().includes(q),
-      );
-    }
-    switch (status) {
-      case "pending":
-        rows = rows.filter(
-          (a) =>
-            !a.my_submission ||
-            a.my_submission.status === "not_started" ||
-            a.my_submission.status === "in_progress" ||
-            a.my_submission.status === "revision_requested",
-        );
-        break;
-      case "submitted":
-        rows = rows.filter(
-          (a) =>
-            a.my_submission?.status === "submitted" ||
-            a.my_submission?.status === "under_review",
-        );
-        break;
-      case "approved":
-        rows = rows.filter((a) => a.my_submission?.status === "approved");
-        break;
-      case "overdue":
-        rows = rows.filter((a) => a.is_overdue);
-        break;
-      case "all":
-      default:
-        break;
-    }
-    return rows;
-  }, [assignments, search, status]);
+  const hasFilters = Boolean(search.trim()) || status !== "all";
 
   if (loadError) {
     return (
@@ -120,7 +110,7 @@ export function AssignmentsList({ assignments, loadError }: AssignmentsListProps
     );
   }
 
-  if (assignments.length === 0) {
+  if (assignments.length === 0 && !hasFilters) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-10 text-center">
         <ClipboardList className="size-6 text-muted-foreground" />
@@ -176,7 +166,7 @@ export function AssignmentsList({ assignments, loadError }: AssignmentsListProps
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {assignments.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={6} className="py-8 text-center">
                   <p className="text-[13px] text-muted-foreground">
@@ -185,7 +175,7 @@ export function AssignmentsList({ assignments, loadError }: AssignmentsListProps
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((a) => {
+              assignments.map((a) => {
                 const status: SubmissionStatus | null = a.my_submission?.status ?? null;
                 return (
                   <TableRow key={a.id} className="group cursor-pointer">
@@ -259,11 +249,32 @@ export function AssignmentsList({ assignments, loadError }: AssignmentsListProps
         </Table>
       </div>
 
-      <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-        <Loader2 className="hidden" />
-        <span className="nums font-medium text-foreground">{filtered.length}</span>
-        {filtered.length === 1 ? "assignment" : "assignments"}
+      <div className="flex flex-wrap items-center justify-between gap-3 text-[12px] text-muted-foreground">
+        <span>
+          Showing {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}–
+          {Math.min(page * pageSize, totalCount)} of {totalCount} assignments
+        </span>
+        <div className="flex gap-2">
+          {page > 1 ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={assignmentPageHref(search, status, page - 1)}>Previous</Link>
+            </Button>
+          ) : null}
+          {page * pageSize < totalCount ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={assignmentPageHref(search, status, page + 1)}>Next</Link>
+            </Button>
+          ) : null}
+        </div>
       </div>
     </div>
   );
+}
+
+function assignmentPageHref(search: string, status: StatusFilter, page: number): string {
+  const params = new URLSearchParams();
+  if (search.trim()) params.set("search", search.trim());
+  if (status !== "all") params.set("status", status);
+  params.set("page", String(page));
+  return `/assignments?${params.toString()}`;
 }

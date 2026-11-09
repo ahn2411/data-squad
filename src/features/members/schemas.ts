@@ -8,7 +8,7 @@ export const changeRoleSchema = z.object({
 export type ChangeRoleValues = z.infer<typeof changeRoleSchema>;
 
 export const inviteSchema = z.object({
-  email: z.string().min(1, "Email is required").email("Enter a valid email"),
+  email: z.string().trim().toLowerCase().min(1, "Email is required").email("Enter a valid email"),
   role: z.enum(["admin", "leader", "member"]).default("member"),
 });
 

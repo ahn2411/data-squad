@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   ChevronDown,
@@ -638,6 +638,7 @@ interface TopicRowProps {
 function TopicRow(props: TopicRowProps) {
   const { topic, resources } = props;
   const [showResources, setShowResources] = React.useState(false);
+  const [editingResourceId, setEditingResourceId] = React.useState<string | null>(null);
 
   return (
     <div className="rounded-md border border-border bg-card p-3">
@@ -705,33 +706,50 @@ function TopicRow(props: TopicRowProps) {
 
       {showResources ? (
         <div className="mt-3 border-t border-border pt-3 pl-5">
-          <ResourceInlineForm topicId={topic.id} />
+          {!editingResourceId ? <ResourceInlineForm topicId={topic.id} /> : null}
           {resources.length > 0 ? (
             <ul className="mt-3 space-y-1.5">
               {resources.map((r) => (
-                <li
-                  key={r.id}
-                  className="flex items-center gap-2 rounded-md border border-border p-2"
-                >
-                  <a
-                    href={r.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] font-medium text-foreground hover:underline"
-                  >
-                    <span className="truncate">{r.title}</span>
-                    <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
-                  </a>
-                  <ResourceTypeBadge type={r.resource_type} />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-1.5 text-destructive hover:text-destructive"
-                    onClick={() => props.onDeleteResource(r)}
-                    aria-label="Delete resource"
-                  >
-                    <Trash2 className="size-3" />
-                  </Button>
+                <li key={r.id}>
+                  {editingResourceId === r.id ? (
+                    <ResourceInlineForm
+                      topicId={topic.id}
+                      resource={r}
+                      onCancel={() => setEditingResourceId(null)}
+                      onSaved={() => setEditingResourceId(null)}
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2 rounded-md border border-border p-2">
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] font-medium text-foreground hover:underline"
+                      >
+                        <span className="truncate">{r.title}</span>
+                        <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+                      </a>
+                      <ResourceTypeBadge type={r.resource_type} />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-1.5"
+                        onClick={() => setEditingResourceId(r.id)}
+                        aria-label={`Edit ${r.title}`}
+                      >
+                        <Pencil className="size-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-1.5 text-destructive hover:text-destructive"
+                        onClick={() => props.onDeleteResource(r)}
+                        aria-label={`Delete ${r.title}`}
+                      >
+                        <Trash2 className="size-3" />
+                      </Button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -747,24 +765,37 @@ function TopicRow(props: TopicRowProps) {
 }
 
 // ────────────────────────────── Inline resource form ──────────────────────────────
-function ResourceInlineForm({ topicId }: { topicId: string }) {
+function ResourceInlineForm({
+  topicId,
+  resource,
+  onCancel,
+  onSaved,
+}: {
+  topicId: string;
+  resource?: LearningResource;
+  onCancel?: () => void;
+  onSaved?: () => void;
+}) {
   const refresh = useRouterRefresh();
   const [pending, startTransition] = useTransition();
-  const [title, setTitle] = React.useState("");
-  const [url, setUrl] = React.useState("");
-  const [resourceType, setResourceType] = React.useState<ResourceType>("documentation");
-  const [isFree, setIsFree] = React.useState(true);
+  const [title, setTitle] = React.useState(resource?.title ?? "");
+  const [url, setUrl] = React.useState(resource?.url ?? "");
+  const [description, setDescription] = React.useState(resource?.description ?? "");
+  const [resourceType, setResourceType] = React.useState<ResourceType>(resource?.resource_type ?? "documentation");
+  const [isFree, setIsFree] = React.useState(resource?.is_free ?? true);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const values: SaveResourceValues = {
+      id: resource?.id,
       topicId,
       title,
       url,
       resourceType,
+      description,
       isFree,
-      displayOrder: 0,
-      difficulty: null,
+      displayOrder: resource?.display_order ?? 0,
+      difficulty: resource?.difficulty ?? null,
     };
     startTransition(async () => {
       const parsed = saveResourceSchema.safeParse(values);
@@ -774,9 +805,13 @@ function ResourceInlineForm({ topicId }: { topicId: string }) {
       }
       const res = await saveResourceAction(parsed.data);
       if (res.ok) {
-        toast.success("Resource added.");
-        setTitle("");
-        setUrl("");
+        toast.success(resource ? "Resource updated." : "Resource added.");
+        if (!resource) {
+          setTitle("");
+          setUrl("");
+          setDescription("");
+        }
+        onSaved?.();
         refresh();
       } else if (!res.ok) {
         toast.error(res.error);
@@ -787,7 +822,7 @@ function ResourceInlineForm({ topicId }: { topicId: string }) {
   return (
     <form
       onSubmit={submit}
-      className="grid gap-2 rounded-md border border-dashed border-border bg-muted/30 p-2 sm:grid-cols-[1fr_1fr_auto_auto_auto]"
+      className="grid gap-2 rounded-md border border-dashed border-border bg-muted/30 p-2 sm:grid-cols-[1fr_1fr_auto_auto_auto_auto]"
     >
       <Input
         className="h-8"
@@ -795,6 +830,13 @@ function ResourceInlineForm({ topicId }: { topicId: string }) {
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         required
+      />
+      <Textarea
+        className="min-h-8 resize-y text-sm sm:col-span-2"
+        placeholder="Optional resource description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        rows={2}
       />
       <Input
         className="h-8"
@@ -828,8 +870,13 @@ function ResourceInlineForm({ topicId }: { topicId: string }) {
       </Button>
       <Button type="submit" size="sm" className="h-8" disabled={pending}>
         {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-        Add
+        {resource ? "Save" : "Add"}
       </Button>
+      {resource && onCancel ? (
+        <Button type="button" size="sm" variant="outline" className="h-8" onClick={onCancel} disabled={pending}>
+          Cancel
+        </Button>
+      ) : null}
     </form>
   );
 }
@@ -1402,7 +1449,7 @@ function TopicFormDialog(props: TopicFormDialogProps) {
 
   // Auto-slug from title while creating (only when slug is empty, so a
   // manually-edited slug is preserved).
-  const title = form.watch("title");
+  const title = useWatch({ control: form.control, name: "title" });
   React.useEffect(() => {
     if (props.mode === "create") {
       const currentSlug = form.getValues("slug");

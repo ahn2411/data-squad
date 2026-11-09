@@ -42,19 +42,20 @@ export type Database = {
         Row: {
           id: string; email: string; full_name: string | null; username: string | null;
           avatar_url: string | null; bio: string | null; github_username: string | null;
-          github_profile_url: string | null; timezone: string;
+          github_profile_url: string | null; capstone_repository_url: string | null; timezone: string;
           created_at: string; updated_at: string;
         };
         Insert: {
           id: string; email: string; full_name?: string | null; username?: string | null;
           avatar_url?: string | null; bio?: string | null; github_username?: string | null;
-          github_profile_url?: string | null; timezone?: string;
+          github_profile_url?: string | null; capstone_repository_url?: string | null; timezone?: string;
           created_at?: string; updated_at?: string;
         };
         Update: {
           id?: string; email?: string; full_name?: string | null; username?: string | null;
           avatar_url?: string | null; bio?: string | null; github_username?: string | null;
-          github_profile_url?: string | null; timezone?: string; updated_at?: string;
+          github_profile_url?: string | null; capstone_repository_url?: string | null;
+          timezone?: string; updated_at?: string;
         };
       };
       team_members: {
@@ -192,17 +193,31 @@ export type Database = {
       topic_progress: {
         Row: {
           id: string; topic_id: string; user_id: string; status: TopicStatus;
-          started_at: string | null; completed_at: string | null;
+          started_at: string | null; completed_at: string | null; completed_criteria: string[];
           created_at: string; updated_at: string;
         };
         Insert: {
           id?: string; topic_id: string; user_id: string; status?: TopicStatus;
-          started_at?: string | null; completed_at?: string | null;
+          started_at?: string | null; completed_at?: string | null; completed_criteria?: string[];
           created_at?: string; updated_at?: string;
         };
         Update: {
           id?: string; topic_id?: string; user_id?: string; status?: TopicStatus;
-          started_at?: string | null; completed_at?: string | null; updated_at?: string;
+          started_at?: string | null; completed_at?: string | null; completed_criteria?: string[]; updated_at?: string;
+        };
+      };
+      week_progress: {
+        Row: {
+          id: string; week_id: string; user_id: string; completed_deliverables: string[]; completed_criteria: string[];
+          created_at: string; updated_at: string;
+        };
+        Insert: {
+          id?: string; week_id: string; user_id: string; completed_deliverables?: string[]; completed_criteria?: string[];
+          created_at?: string; updated_at?: string;
+        };
+        Update: {
+          id?: string; week_id?: string; user_id?: string; completed_deliverables?: string[]; completed_criteria?: string[];
+          updated_at?: string;
         };
       };
 
@@ -242,6 +257,19 @@ export type Database = {
         Row: { id: string; assignment_id: string; user_id: string; created_at: string };
         Insert: { id?: string; assignment_id: string; user_id: string; created_at?: string };
         Update: { id?: string; assignment_id?: string; user_id?: string };
+      };
+      assignment_files: {
+        Row: {
+          id: string; assignment_id: string; team_id: string; storage_path: string;
+          file_name: string; content_type: string; file_size: number; uploaded_by: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string; assignment_id: string; team_id: string; storage_path: string;
+          file_name: string; content_type: string; file_size: number; uploaded_by: string;
+          created_at?: string;
+        };
+        Update: { id?: string; file_name?: string; content_type?: string; file_size?: number };
       };
       submissions: {
         Row: {
@@ -396,6 +424,19 @@ export type Database = {
         };
         Update: { id?: string; body?: string; updated_at?: string };
       };
+      blocker_files: {
+        Row: {
+          id: string; blocker_id: string; team_id: string; storage_path: string;
+          file_name: string; content_type: string; file_size: number; uploaded_by: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string; blocker_id: string; team_id: string; storage_path: string;
+          file_name: string; content_type: string; file_size: number; uploaded_by: string;
+          created_at?: string;
+        };
+        Update: never;
+      };
       announcements: {
         Row: {
           id: string; team_id: string; title: string; content: string | null; author_id: string;
@@ -417,14 +458,14 @@ export type Database = {
         Row: {
           id: string; user_id: string; team_id: string; type: NotificationType; title: string;
           body: string | null; entity_type: string | null; entity_id: string | null;
-          link: string | null; read_at: string | null; created_at: string;
+          link: string | null; read_at: string | null; created_at: string; dedupe_key: string | null;
         };
         Insert: {
           id?: string; user_id: string; team_id: string; type: NotificationType; title: string;
           body?: string | null; entity_type?: string | null; entity_id?: string | null;
-          link?: string | null; read_at?: string | null; created_at?: string;
+          link?: string | null; read_at?: string | null; created_at?: string; dedupe_key?: string | null;
         };
-        Update: { id?: string; read_at?: string | null };
+        Update: { id?: string; read_at?: string | null; dedupe_key?: string | null };
       };
       activity_logs: {
         Row: {
@@ -441,7 +482,9 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      get_my_profile_timezone: { Args: Record<string, never>; Returns: string | null };
+    };
     Enums: {
       team_role: TeamRole;
       membership_status: MembershipStatus;
@@ -488,12 +531,12 @@ export type SubmissionStatus =
   | "revision_requested" | "approved" | "rejected";
 export type ReviewStatus = "pending" | "approved" | "revision_requested" | "rejected";
 export type BlockerPriority = "low" | "medium" | "high" | "critical";
-export type BlockerStatus = "open" | "being_addressed" | "resolved";
+export type BlockerStatus = "open" | "being_addressed" | "resolved" | "closed";
 export type PublicationStatus = "draft" | "published" | "archived";
 export type NotificationType =
   | "new_assignment" | "deadline_approaching" | "submission_reviewed"
   | "revision_requested" | "new_announcement" | "weekly_report_due" | "blocker_updated"
-  | "pending_member_review";
+  | "pending_member_review" | "submission_received" | "discussion_reply" | "blocker_response";
 
 // ────────────────────────────── Row aliases ──────────────────────────────
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -518,7 +561,7 @@ export type Notification = Database["public"]["Tables"]["notifications"]["Row"];
 // ────────────────────────────── Joined shapes ──────────────────────────────
 export type MemberWithProfile = TeamMember & {
   profiles: Pick<
-    Profile, "id" | "email" | "full_name" | "username" | "avatar_url" | "github_username" | "created_at"
+    Profile, "id" | "full_name" | "username" | "avatar_url" | "github_username" | "created_at"
   >;
 };
 

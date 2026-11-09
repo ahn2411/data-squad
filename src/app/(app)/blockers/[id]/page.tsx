@@ -29,6 +29,8 @@ import {
 import { formatDate, formatDateTime, relativeTime, initials } from "@/lib/format";
 import { BlockerStatusForm } from "./blocker-status-form";
 import { BlockerComments } from "./blocker-comments";
+import { BlockerOwnerControls } from "./blocker-owner-controls";
+import { BlockerAttachments } from "./blocker-attachments";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -75,10 +77,9 @@ export default async function BlockerDetailPage({ params }: PageProps) {
     (session.membership.role === "admin" ||
       session.membership.role === "leader");
 
-  const reporterName =
-    blocker.reporter?.full_name ?? blocker.reporter?.email ?? "Member";
+  const reporterName = blocker.reporter?.full_name ?? "Member";
 
-  let members: Array<{ id: string; name: string; email: string }> = [];
+  let members: Array<{ id: string; name: string }> = [];
   if (canManage) {
     try {
       members = await getActiveMembersForAssignment();
@@ -133,9 +134,6 @@ export default async function BlockerDetailPage({ params }: PageProps) {
                 <div>
                   <p className="text-[13px] font-medium text-foreground">
                     {reporterName}
-                  </p>
-                  <p className="text-[12px] text-muted-foreground">
-                    {blocker.reporter?.email ?? ""}
                   </p>
                 </div>
                 <div className="ml-auto text-right">
@@ -225,6 +223,15 @@ export default async function BlockerDetailPage({ params }: PageProps) {
             comments={blocker.comments}
             currentUserId={session.userId}
           />
+          <BlockerAttachments
+            blockerId={blocker.id}
+            teamId={session.membership.team_id}
+            userId={session.userId}
+            canUpload={isOwn || canManage}
+            canManage={session.membership.role === "admin" || session.membership.role === "leader"}
+            canRemoveAll={isOwn}
+            files={blocker.files}
+          />
         </div>
 
         {/* Side column */}
@@ -247,7 +254,7 @@ export default async function BlockerDetailPage({ params }: PageProps) {
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-muted-foreground">Helper</span>
                   <span className="font-medium text-foreground">
-                    {blocker.helper.full_name ?? blocker.helper.email}
+                    {blocker.helper.full_name ?? "Member"}
                   </span>
                 </div>
               ) : (
@@ -319,8 +326,12 @@ export default async function BlockerDetailPage({ params }: PageProps) {
             />
           ) : null}
 
+          {isOwn ? (
+            <BlockerOwnerControls blockerId={blocker.id} status={blocker.status} />
+          ) : null}
+
           {/* Member self-hint when own + unresolved */}
-          {isOwn && blocker.status !== "resolved" ? (
+          {isOwn && blocker.status !== "resolved" && blocker.status !== "closed" ? (
             <Card className="border-warning/30 bg-warning/5">
               <CardContent className="p-4 text-[12px] text-foreground">
                 <p className="font-medium">Waiting for help</p>

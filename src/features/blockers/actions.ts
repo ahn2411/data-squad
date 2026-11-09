@@ -197,6 +197,54 @@ export async function updateBlockerStatusAction(
   return { ok: true };
 }
 
+/** Reporter may close their request or reopen one that was closed/resolved. */
+export async function updateOwnBlockerStateAction(
+  id: string,
+  nextStatus: "open" | "closed",
+): Promise<BlockerActionResult> {
+  const user = await requireActive();
+  if (!user.ok) return user;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    return { ok: false, error: "Invalid blocker." };
+  }
+  if (nextStatus !== "open" && nextStatus !== "closed") {
+    return { ok: false, error: "Invalid blocker status." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: current } = await supabase
+    .from("blockers")
+    .select("id, status")
+    .eq("id", id)
+    .eq("user_id", user.userId)
+    .maybeSingle();
+  if (!current) return { ok: false, error: "Blocker not found." };
+
+  const allowed = nextStatus === "closed"
+    ? current.status !== "closed"
+    : current.status === "closed" || current.status === "resolved";
+  if (!allowed) {
+    return { ok: false, error: "The blocker status changed. Refresh and try again." };
+  }
+
+  const { data: updated, error } = await supabase
+    .from("blockers")
+    .update({ status: nextStatus })
+    .eq("id", id)
+    .eq("user_id", user.userId)
+    .eq("status", current.status)
+    .select("id")
+    .maybeSingle();
+  if (error || !updated) {
+    return { ok: false, error: "The blocker changed before the update. Refresh and try again." };
+  }
+
+  revalidatePath("/blockers");
+  revalidatePath(`/blockers/${id}`);
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
 /**
  * Add a comment on a blocker (any active member who can see the blocker).
  * RLS on blocker_comments allows author_id = auth.uid() to insert.

@@ -53,8 +53,7 @@ export default async function NewAssignmentPage() {
         mode="create"
         members={activeMembers.map((m) => ({
           id: m.user_id,
-          name: m.profiles?.full_name ?? m.profiles?.email ?? "Unknown",
-          email: m.profiles?.email ?? "",
+          name: m.profiles?.full_name ?? "Member",
         }))}
         phases={phases}
       />

@@ -4,7 +4,6 @@ import {
   AlertCircle,
   ArrowRight,
   BarChart3,
-  Bell,
   CalendarDays,
   Check,
   ClipboardList,
@@ -71,7 +70,7 @@ export default async function DashboardPage() {
 
   if (isAdminOrLeader) {
     try {
-      adminData = await getAdminDashboardData(session.userId, teamId);
+      adminData = await getAdminDashboardData(teamId);
     } catch {
       fetchFailed = true;
     }
@@ -543,7 +542,7 @@ function MemberDashboardView({
           <CardHeader>
             <CardTitle className="text-[14px]">Active blockers</CardTitle>
             <CardDescription className="text-[12px]">
-              Issues you&apos;ve raised that aren&apos;t resolved
+              Issues you&apos;ve raised that aren&apos;t resolved or closed
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -771,9 +770,6 @@ function AdminDashboardView({
                           <p className="text-[13px] font-medium text-foreground">
                             {m.name}
                           </p>
-                          <p className="truncate text-[11px] text-muted-foreground">
-                            {m.email}
-                          </p>
                         </Link>
                       </TableCell>
                       <TableCell>
@@ -933,7 +929,7 @@ function AdminDashboardView({
           <CardHeader>
             <CardTitle className="text-[14px]">Recent activity</CardTitle>
             <CardDescription className="text-[12px]">
-              Latest notifications and submissions across the team
+              Recent member and team actions
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -943,11 +939,7 @@ function AdminDashboardView({
                   const content = (
                     <>
                       <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                        {a.kind === "notification" ? (
-                          <Bell className="size-3.5" />
-                        ) : (
-                          <Inbox className="size-3.5" />
-                        )}
+                        <Activity className="size-3.5" />
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-[13px] font-medium text-foreground">

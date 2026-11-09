@@ -2,16 +2,26 @@ import { AlertCircle } from "lucide-react";
 import { requireActiveMember } from "@/features/auth/session";
 import { PageHeader } from "@/components/page-header";
 import { getNotifications } from "@/features/notifications/queries";
-import type { Notification } from "@/types/database";
 import { NotificationsList } from "./notifications-list";
 
-export default async function NotificationsPage() {
-  const session = await requireActiveMember();
+export const metadata = { title: "Notifications" };
 
-  let notifications: Notification[] = [];
+interface PageProps {
+  searchParams: Promise<{ page?: string }>;
+}
+
+export default async function NotificationsPage({ searchParams }: PageProps) {
+  await requireActiveMember();
+  const params = await searchParams;
+  const parsedPage = typeof params.page === "string" ? Number(params.page) : 1;
+  const requestedPage = Number.isSafeInteger(parsedPage) && parsedPage > 0
+    ? parsedPage
+    : 1;
+
+  let notificationPage: Awaited<ReturnType<typeof getNotifications>> | null = null;
   let loadError: string | null = null;
   try {
-    notifications = await getNotifications();
+    notificationPage = await getNotifications(requestedPage);
   } catch {
     loadError = "Could not load notifications right now.";
   }
@@ -34,7 +44,14 @@ export default async function NotificationsPage() {
           </p>
         </div>
       ) : (
-        <NotificationsList notifications={notifications} />
+        <NotificationsList
+          notifications={notificationPage?.notifications ?? []}
+          unreadCount={notificationPage?.unreadCount ?? 0}
+          totalCount={notificationPage?.totalCount ?? 0}
+          page={notificationPage?.page ?? 1}
+          pageSize={notificationPage?.pageSize ?? 20}
+          totalPages={notificationPage?.totalPages ?? 1}
+        />
       )}
     </>
   );

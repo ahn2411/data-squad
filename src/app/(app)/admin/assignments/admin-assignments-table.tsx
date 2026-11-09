@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import {
   MoreHorizontal,
@@ -65,31 +66,59 @@ import type { PublicationStatus } from "@/types/database";
 
 interface AdminAssignmentsTableProps {
   assignments: AdminAssignmentListItem[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  initialSearch: string;
+  initialStatus: StatusFilter;
 }
 
 type StatusFilter = "all" | PublicationStatus;
 
-export function AdminAssignmentsTable({ assignments }: AdminAssignmentsTableProps) {
+export function AdminAssignmentsTable({
+  assignments,
+  totalCount,
+  page,
+  pageSize,
+  initialSearch,
+  initialStatus,
+}: AdminAssignmentsTableProps) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [search, setSearch] = React.useState("");
-  const [status, setStatus] = React.useState<StatusFilter>("all");
+  const [search, setSearch] = React.useState(initialSearch);
+  const [status, setStatus] = React.useState<StatusFilter>(initialStatus);
   const [archiveTarget, setArchiveTarget] = React.useState<AdminAssignmentListItem | null>(null);
 
-  const filtered = React.useMemo(() => {
-    let rows = assignments;
-    if (status !== "all") {
-      rows = rows.filter((a) => a.publication_status === status);
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      rows = rows.filter(
-        (a) =>
-          a.title.toLowerCase().includes(q) ||
-          (a.description ?? "").toLowerCase().includes(q),
+  React.useEffect(() => {
+    const syncFromHistory = () => {
+      const params = new URLSearchParams(window.location.search);
+      const nextStatus = params.get("status");
+      setSearch(params.get("search") ?? "");
+      setStatus(
+        nextStatus && ["all", "draft", "published", "archived"].includes(nextStatus)
+          ? (nextStatus as StatusFilter)
+          : "all",
       );
+    };
+    window.addEventListener("popstate", syncFromHistory);
+    return () => window.removeEventListener("popstate", syncFromHistory);
+  }, []);
+
+  React.useEffect(() => {
+    const normalizedSearch = search.trim().slice(0, 120);
+    const params = new URLSearchParams();
+    if (normalizedSearch) params.set("search", normalizedSearch);
+    if (status !== "all") params.set("status", status);
+    const current = new URLSearchParams(window.location.search);
+    const currentSearch = (current.get("search") ?? "").trim().slice(0, 120);
+    const currentStatus = current.get("status") ?? "all";
+    if (currentSearch === normalizedSearch && currentStatus === status) {
+      const currentPage = current.get("page");
+      if (currentPage) params.set("page", currentPage);
     }
-    return rows;
-  }, [assignments, search, status]);
+    const query = params.toString();
+    router.replace(query ? `/admin/assignments?${query}` : "/admin/assignments", { scroll: false });
+  }, [search, status, router]);
 
   const handlePublish = (row: AdminAssignmentListItem) => {
     startTransition(async () => {
@@ -117,7 +146,8 @@ export function AdminAssignmentsTable({ assignments }: AdminAssignmentsTableProp
     });
   };
 
-  if (assignments.length === 0) {
+  const hasFilters = Boolean(search.trim()) || status !== "all";
+  if (totalCount === 0 && !hasFilters) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-10 text-center">
         <ClipboardList className="size-6 text-muted-foreground" />
@@ -164,8 +194,8 @@ export function AdminAssignmentsTable({ assignments }: AdminAssignmentsTableProp
           </Select>
         </div>
         <span className="text-[12px] text-muted-foreground">
-          <span className="nums font-medium text-foreground">{filtered.length}</span>{" "}
-          {filtered.length === 1 ? "assignment" : "assignments"}
+          <span className="nums font-medium text-foreground">{totalCount}</span>{" "}
+          {totalCount === 1 ? "assignment" : "assignments"}
         </span>
       </div>
 
@@ -184,7 +214,7 @@ export function AdminAssignmentsTable({ assignments }: AdminAssignmentsTableProp
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {assignments.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={8} className="py-8 text-center">
                   <p className="text-[13px] text-muted-foreground">
@@ -193,7 +223,7 @@ export function AdminAssignmentsTable({ assignments }: AdminAssignmentsTableProp
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((row) => (
+              assignments.map((row) => (
                 <TableRow key={row.id} className="group">
                   <TableCell className="min-w-[260px]">
                     <Link
@@ -293,6 +323,25 @@ export function AdminAssignmentsTable({ assignments }: AdminAssignmentsTableProp
         </Table>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-3 text-[12px] text-muted-foreground">
+        <span>
+          Showing {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}–
+          {Math.min(page * pageSize, totalCount)} of {totalCount} assignments
+        </span>
+        <div className="flex gap-2">
+          {page > 1 ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={adminAssignmentPageHref(search, status, page - 1)}>Previous</Link>
+            </Button>
+          ) : null}
+          {page * pageSize < totalCount ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={adminAssignmentPageHref(search, status, page + 1)}>Next</Link>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
       <AlertDialog
         open={archiveTarget !== null}
         onOpenChange={(open) => !open && setArchiveTarget(null)}
@@ -327,4 +376,12 @@ export function AdminAssignmentsTable({ assignments }: AdminAssignmentsTableProp
       </AlertDialog>
     </>
   );
+}
+
+function adminAssignmentPageHref(search: string, status: StatusFilter, page: number): string {
+  const params = new URLSearchParams();
+  if (search.trim()) params.set("search", search.trim());
+  if (status !== "all") params.set("status", status);
+  params.set("page", String(page));
+  return `/admin/assignments?${params.toString()}`;
 }

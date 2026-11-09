@@ -8,6 +8,7 @@ This document records the current implementation and the remaining setup work fo
 
 - Next.js App Router, TypeScript, Tailwind, shared UI, themes, and responsive workspace shell.
 - Supabase authentication, registration/password flows, active-membership gating, profiles, and member administration.
+- Signup, invite and password-reset emails share a validated callback URL; production rejects localhost and falls back to Vercel's production origin. `/auth/callback` passes the proxy auth gate, and root-level legacy PKCE links are forwarded to it. Supabase Site URL, redirect allowlist, and email templates remain external verification steps.
 - Cookie-persisted sidebar collapse state and role-filtered navigation.
 
 ### Learning and progress
@@ -39,20 +40,29 @@ This document records the current implementation and the remaining setup work fo
 | `0005_curriculum_seed.sql` | Idempotent curriculum seed |
 | `0006_pending_member_notification_type.sql` | Notification type for pending member reviews |
 | `0007_pending_member_review.sql` | Create pending memberships at signup, notify admins, and backfill existing profiles |
+| `0008_private_storage.sql` | Private avatar and attachment buckets with team-scoped policies |
+| `0009_notification_event_types.sql` | Notification enum values for submissions, discussion replies and blocker responses |
+| `0010_collaboration_notifications.sql` | Event-driven notifications for submissions, replies and blocker changes |
+| `0011_assignment_attachments.sql` | Assignment file metadata and access-controlled private Storage policies |
+| `0012_blocker_resolution_files.sql` | Blocker files, private Storage access, and reporter close/reopen transitions |
+| `0013_topic_completion_checklist.sql` | Criteria snapshots and database enforcement for topic completion |
+| `0014_week_deliverable_progress.sql` | Per-learner weekly deliverable progress with RLS |
+| `0015_notification_dedupe.sql` | Unique notification keys for retry-safe scheduled reminders |
+| `0016_preserve_curriculum_edits.sql` | Prevent curriculum seed reruns from overwriting prior edits |
+| `0017_curriculum_prerequisites.sql` | Fill missing prerequisite guidance on untouched seeded topics |
 
 Apply migrations in order to the Supabase project used by the deployment. The migrations contain RLS policies and triggers; deploying only the frontend does not provision this schema or Storage buckets.
 
 ## Remaining work and external setup
 
-- Create a private `submissions` Storage bucket and Storage policies before enabling file upload/download UI.
-- Create an `avatars` bucket if profile image uploads are added.
+- Apply migrations 0008–0021 to a disposable Supabase project and verify file access, RLS, status transitions, notification triggers/read states/pagination, topic/week completion checks, notification deduplication, curriculum edit/resource seeding, activity auditing, and weekly report edit locking before production rollout.
 - Configure Supabase Auth email delivery for password resets and invitation flows.
 - Add realtime notification updates if live delivery is required; currently the UI refreshes data on requests.
-- Build an admin settings page if application-level settings are needed.
-- Run a production browser/accessibility review and deploy against the intended production Supabase project.
+- Exercise report/deadline reminders and search coverage; add activity audit writers. Reminder generation is implemented with a protected Vercel cron and database dedupe, but runtime scheduling remains unverified.
+- Run a production browser/accessibility review and verify the intended Vercel/Supabase deployment.
 
 ## Known scope boundaries
 
 - GitHub profile, submission, and report links are stored as URLs; no GitHub API synchronization is implemented.
-- Topic completion is member-driven and does not automatically infer completion from assignment status.
-- Submission text and URL workflows work without Storage. The file metadata table alone does not provide object storage.
+- Topic completion is member-confirmed against configured criteria and does not automatically infer completion from assignment status.
+- Profile, submission, assignment, and blocker file flows use private Supabase Storage, but migration application and role-based runtime tests remain outstanding.

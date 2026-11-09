@@ -8,7 +8,10 @@ import {
   Search,
   FileText,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -28,32 +31,36 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate, initials } from "@/lib/format";
-import type { ReportWithProfile, WeekWithPhaseLite } from "@/features/reports/queries";
+import type { ReportPage, WeekWithPhaseLite } from "@/features/reports/queries";
 
 interface ReportsTableProps {
-  reports: ReportWithProfile[];
+  reportPage: ReportPage;
   weeks: WeekWithPhaseLite[];
-  members: Array<{ id: string; name: string; email: string }>;
+  members: Array<{ id: string; name: string }>;
   weekFilter?: string;
   userFilter?: string;
+  searchFilter?: string;
 }
 
 export function ReportsTable({
-  reports,
+  reportPage,
   weeks,
   members,
   weekFilter,
   userFilter,
+  searchFilter,
 }: ReportsTableProps) {
   const router = useRouter();
-  const [search, setSearch] = React.useState("");
+  const [search, setSearch] = React.useState(searchFilter ?? "");
 
   // Sync filters to the URL query so refresh + share work.
   const updateQuery = React.useCallback(
-    (next: { week?: string; user?: string }) => {
+    (next: { week?: string; user?: string; search?: string; page?: number }) => {
       const sp = new URLSearchParams();
       if (next.week) sp.set("week", next.week);
       if (next.user) sp.set("user", next.user);
+      if (next.search) sp.set("q", next.search);
+      if (next.page && next.page > 1) sp.set("page", String(next.page));
       const qs = sp.toString();
       router.replace(qs ? `/weekly-reports?${qs}` : "/weekly-reports", {
         scroll: false,
@@ -61,6 +68,11 @@ export function ReportsTable({
     },
     [router],
   );
+  React.useEffect(() => {
+    if (search.trim() === (searchFilter ?? "")) return;
+    const timer = window.setTimeout(() => updateQuery({ week: weekFilter, user: userFilter, search: search.trim() || undefined }), 350);
+    return () => window.clearTimeout(timer);
+  }, [search, searchFilter, updateQuery, userFilter, weekFilter]);
 
   const onWeekChange = (value: string) => {
     updateQuery({
@@ -75,20 +87,7 @@ export function ReportsTable({
     });
   };
 
-  const filtered = React.useMemo(() => {
-    let rows = reports;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          (r.profiles?.full_name ?? "").toLowerCase().includes(q) ||
-          (r.profiles?.email ?? "").toLowerCase().includes(q) ||
-          (r.weeks?.title ?? "").toLowerCase().includes(q) ||
-          (r.learned ?? "").toLowerCase().includes(q),
-      );
-    }
-    return rows;
-  }, [reports, search]);
+  const { reports, totalCount, page, pageSize } = reportPage;
 
   return (
     <div className="space-y-4">
@@ -138,7 +137,7 @@ export function ReportsTable({
         </Select>
       </div>
 
-      {filtered.length === 0 ? (
+      {reports.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-10 text-center">
           <FileText className="size-6 text-muted-foreground" />
           <p className="mt-2 text-[14px] font-medium text-foreground">
@@ -162,10 +161,8 @@ export function ReportsTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((report) => {
-                const name =
-                  report.profiles?.full_name ?? report.profiles?.email ?? "Member";
-                const email = report.profiles?.email ?? "";
+              {reports.map((report) => {
+                const name = report.profiles?.full_name ?? "Member";
                 const weekTitle = report.weeks
                   ? `W${report.weeks.week_number} · ${report.weeks.title}`
                   : "—";
@@ -185,9 +182,6 @@ export function ReportsTable({
                           <div className="truncate text-[13px] font-medium text-foreground">
                             {name}
                           </div>
-                          <p className="truncate text-[12px] text-muted-foreground">
-                            {email}
-                          </p>
                         </div>
                       </Link>
                     </TableCell>
@@ -230,8 +224,12 @@ export function ReportsTable({
       )}
 
       <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-        <span className="nums font-medium text-foreground">{filtered.length}</span>
-        {filtered.length === 1 ? "report" : "reports"}
+        <span className="nums font-medium text-foreground">{totalCount}</span>
+        {totalCount === 1 ? "report" : "reports"} · page {page} of {Math.max(1, Math.ceil(totalCount / pageSize))}
+        <span className="ml-auto flex gap-2">
+          <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => updateQuery({ week: weekFilter, user: userFilter, search: searchFilter, page: page - 1 })}><ChevronLeft className="size-4" />Previous</Button>
+          <Button size="sm" variant="outline" disabled={page * pageSize >= totalCount} onClick={() => updateQuery({ week: weekFilter, user: userFilter, search: searchFilter, page: page + 1 })}>Next<ChevronRight className="size-4" /></Button>
+        </span>
       </div>
     </div>
   );

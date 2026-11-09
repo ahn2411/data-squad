@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/configured";
 import { getSessionContext } from "@/features/auth/session";
@@ -97,6 +98,7 @@ async function upsertProgress(
     status: TopicStatus;
     startedAt?: string | null;
     completedAt?: string | null;
+    completedCriteria?: string[];
   },
 ): Promise<RoadmapActionResult> {
   const supabase = await createSupabaseServerClient();
@@ -136,6 +138,7 @@ async function upsertProgress(
     status: update.status,
     started_at: startedAt,
     completed_at: completedAt,
+    completed_criteria: update.status === "completed" ? update.completedCriteria ?? [] : [],
   };
 
   if (prior) {
@@ -170,12 +173,87 @@ export async function markTopicStartedAction(
 /** Mark a topic as completed (status = completed). Deliberate user action. */
 export async function markTopicCompletedAction(
   topicId: string,
+  completedCriteria: string[],
 ): Promise<RoadmapActionResult> {
   const active = await requireActive();
   if (!active.ok) return active;
-  const parsed = topicIdSchema.safeParse(topicId);
-  if (!parsed.success) return { ok: false, error: "Invalid topic id." };
-  return upsertProgress(active.userId, parsed.data, { status: "completed" });
+  const parsed = z.object({
+    topicId: z.string().uuid(),
+    completedCriteria: z.array(z.string().max(500)).max(100),
+  }).safeParse({ topicId, completedCriteria });
+  if (!parsed.success) return { ok: false, error: "Invalid completion checklist." };
+
+  const supabase = await createSupabaseServerClient();
+  const { data: topic } = await supabase.from("topics")
+    .select("completion_criteria")
+    .eq("id", parsed.data.topicId)
+    .eq("publication_status", "published")
+    .maybeSingle();
+  if (!topic) return { ok: false, error: "Topic not found or not available." };
+
+  const criteria = Array.isArray(topic.completion_criteria)
+    ? topic.completion_criteria as string[]
+    : [];
+  const submitted = parsed.data.completedCriteria;
+  if (criteria.length === 0) {
+    return { ok: false, error: "This topic has no completion criteria yet. Ask a leader to update it." };
+  }
+  if (new Set(submitted).size !== criteria.length ||
+      submitted.length !== criteria.length ||
+      criteria.some((criterion) => !submitted.includes(criterion))) {
+    return { ok: false, error: "Confirm every completion criterion before marking this topic complete." };
+  }
+  return upsertProgress(active.userId, parsed.data.topicId, {
+    status: "completed",
+    completedCriteria: criteria,
+  });
+}
+
+/** Save the learner's explicit completion selections for a published week. */
+export async function saveWeekDeliverablesAction(
+  weekId: string,
+  completedDeliverables: string[],
+  completedCriteria: string[],
+): Promise<RoadmapActionResult> {
+  const active = await requireActive();
+  if (!active.ok) return active;
+  const parsed = z.object({
+    weekId: z.string().uuid(),
+    completedDeliverables: z.array(z.string().min(1).max(500)).max(100),
+    completedCriteria: z.array(z.string().min(1).max(500)).max(100),
+  }).safeParse({ weekId, completedDeliverables, completedCriteria });
+  if (!parsed.success) return { ok: false, error: "Invalid deliverable checklist." };
+  if (new Set(parsed.data.completedDeliverables).size !== parsed.data.completedDeliverables.length) {
+    return { ok: false, error: "A deliverable can only be selected once." };
+  }
+  if (new Set(parsed.data.completedCriteria).size !== parsed.data.completedCriteria.length) {
+    return { ok: false, error: "A completion criterion can only be selected once." };
+  }
+  const supabase = await createSupabaseServerClient();
+  const { data: week } = await supabase.from("weeks")
+    .select("deliverables, completion_criteria")
+    .eq("id", parsed.data.weekId)
+    .eq("status", "published")
+    .maybeSingle();
+  if (!week) return { ok: false, error: "Week not found or not available." };
+  const deliverables = Array.isArray(week.deliverables) ? week.deliverables as string[] : [];
+  const criteria = Array.isArray(week.completion_criteria) ? week.completion_criteria as string[] : [];
+  if (parsed.data.completedDeliverables.some((item) => !deliverables.includes(item))) {
+    return { ok: false, error: "The checklist changed. Refresh and try again." };
+  }
+  if (parsed.data.completedCriteria.some((item) => !criteria.includes(item))) {
+    return { ok: false, error: "The checklist changed. Refresh and try again." };
+  }
+  const { error } = await supabase.from("week_progress").upsert({
+    week_id: parsed.data.weekId,
+    user_id: active.userId,
+    completed_deliverables: parsed.data.completedDeliverables,
+    completed_criteria: parsed.data.completedCriteria,
+  }, { onConflict: "week_id,user_id" });
+  if (error) return { ok: false, error: "Could not save weekly deliverable progress." };
+  revalidatePath("/roadmap");
+  revalidatePath(`/roadmap/${parsed.data.weekId}`);
+  return { ok: true };
 }
 
 /** Reset (delete) the caller's progress row for a topic. */
@@ -462,12 +540,15 @@ export async function saveResourceAction(
     display_order: v.displayOrder,
   };
   if (v.id) {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from("learning_resources")
       .update(payload)
       .eq("id", v.id)
-      .eq("team_id", leader.teamId);
+      .eq("team_id", leader.teamId)
+      .select("id")
+      .maybeSingle();
     if (error) return { ok: false, error: describeError(error, "Could not save the resource.") };
+    if (!updated) return { ok: false, error: "This learning resource no longer exists or is outside your team." };
   } else {
     const { error } = await supabase.from("learning_resources").insert(payload);
     if (error) return { ok: false, error: describeError(error, "Could not create the resource.") };

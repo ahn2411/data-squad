@@ -114,18 +114,19 @@ export async function updateAnnouncementAction(
   const supabase = await createSupabaseServerClient();
 
   // Fetch the current row to detect first-publish (preserve first published_at).
-  const { data: current } = await supabase
+  const { data: current, error: currentError } = await supabase
     .from("announcements")
     .select("status, published_at")
     .eq("id", v.id)
     .maybeSingle();
 
+  if (currentError) return { ok: false, error: "Could not load the announcement before saving." };
   if (!current) return { ok: false, error: "Announcement not found." };
 
   const wasPublished = current.status === "published";
   const nowPublished = v.status === "published";
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("announcements")
     .update({
       title: v.title,
@@ -138,9 +139,11 @@ export async function updateAnnouncementAction(
           : new Date().toISOString()
         : null,
     })
-    .eq("id", v.id);
+    .eq("id", v.id)
+    .select("id")
+    .maybeSingle();
 
-  if (error) {
+  if (error || !updated) {
     return { ok: false, error: "Could not save the announcement." };
   }
 
@@ -166,12 +169,14 @@ export async function deleteAnnouncementAction(
   if (!parsed.success) return { ok: false, error: "Invalid announcement id." };
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
+  const { data: deleted, error } = await supabase
     .from("announcements")
     .delete()
-    .eq("id", parsed.data.announcementId);
+    .eq("id", parsed.data.announcementId)
+    .select("id")
+    .maybeSingle();
 
-  if (error) return { ok: false, error: "Could not delete the announcement." };
+  if (error || !deleted) return { ok: false, error: "Could not delete the announcement. It may have already been removed." };
 
   revalidatePath("/announcements");
   revalidatePath("/admin/announcements");
@@ -194,15 +199,17 @@ export async function archiveAnnouncementAction(
   if (!parsed.success) return { ok: false, error: "Invalid announcement id." };
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
+  const { data: archived, error } = await supabase
     .from("announcements")
     .update({
       status: "archived",
       archived_at: new Date().toISOString(),
     })
-    .eq("id", parsed.data.announcementId);
+    .eq("id", parsed.data.announcementId)
+    .select("id")
+    .maybeSingle();
 
-  if (error) return { ok: false, error: "Could not archive the announcement." };
+  if (error || !archived) return { ok: false, error: "Could not archive the announcement. It may have already changed." };
 
   revalidatePath("/announcements");
   revalidatePath("/admin/announcements");

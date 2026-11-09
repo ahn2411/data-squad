@@ -307,15 +307,11 @@ function PostCard({
 }: PostCardProps) {
   const isOwn = post.author_id === currentUserId;
   const authorName =
-    post.author?.full_name ?? post.author?.email ?? "Member";
+    post.author?.full_name ?? "Member";
   const isEditing = editingId === post.id;
   const isReplying = replyTo === post.id;
   const [editBody, setEditBody] = React.useState(post.body);
   const [replyBody, setReplyBody] = React.useState("");
-
-  React.useEffect(() => {
-    if (isEditing) setEditBody(post.body);
-  }, [isEditing, post.body]);
 
   const saveEdit = () => {
     if (!editBody.trim()) {
@@ -398,7 +394,14 @@ function PostCard({
                   size="sm"
                   className="size-7 p-0"
                   disabled={pending}
-                  onClick={() => setEditingId(isEditing ? null : post.id)}
+                  onClick={() => {
+                    if (isEditing) {
+                      setEditingId(null);
+                    } else {
+                      setEditBody(post.body);
+                      setEditingId(post.id);
+                    }
+                  }}
                   aria-label="Edit post"
                   title="Edit"
                 >
@@ -605,13 +608,9 @@ function ReplyCard({
 }: ReplyCardProps) {
   const isOwn = reply.author_id === currentUserId;
   const authorName =
-    reply.author?.full_name ?? reply.author?.email ?? "Member";
+    reply.author?.full_name ?? "Member";
   const isEditing = editingId === reply.id;
   const [editBody, setEditBody] = React.useState(reply.body);
-
-  React.useEffect(() => {
-    if (isEditing) setEditBody(reply.body);
-  }, [isEditing, reply.body]);
 
   const saveEdit = () => {
     if (!editBody.trim()) {
@@ -675,7 +674,14 @@ function ReplyCard({
                 size="sm"
                 className="size-6 p-0"
                 disabled={pending}
-                onClick={() => setEditingId(isEditing ? null : reply.id)}
+                onClick={() => {
+                  if (isEditing) {
+                    setEditingId(null);
+                  } else {
+                    setEditBody(reply.body);
+                    setEditingId(reply.id);
+                  }
+                }}
                 aria-label="Edit reply"
               >
                 <Pencil className="size-3 text-muted-foreground" />

@@ -9,7 +9,7 @@ import type { Review } from "@/types/database";
 interface ReviewListProps {
   reviews: Array<
     Review & {
-      reviewer: Pick<{ id: string; full_name: string | null; email: string }, "id" | "full_name" | "email"> | null;
+      reviewer: Pick<{ id: string; full_name: string | null }, "id" | "full_name"> | null;
     }
   >;
 }
@@ -30,7 +30,7 @@ export function ReviewList({ reviews }: ReviewListProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {sorted.map((review) => {
-          const name = review.reviewer?.full_name ?? review.reviewer?.email ?? "Reviewer";
+          const name = review.reviewer?.full_name ?? "Reviewer";
           return (
             <div key={review.id} className="space-y-2">
               <div className="flex items-center gap-2">

@@ -13,33 +13,24 @@ export async function getPhasesAndWeeks(): Promise<PhaseOption[]> {
   if (ctx.status !== "active") return [];
 
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("phases")
-    .select(
-      "id, title, phase_number, display_order, weeks:id(title, weeks:weeks(id, title, week_number, display_order))",
-    )
-    .order("display_order", { ascending: true });
-
-  if (error || !data) return [];
-
-  // Flatten: phases → weeks. The nested select above is awkward; fall back
-  // to a separate weeks query for cleanliness.
-  const { data: phasesRaw } = await supabase
+  const { data: phases, error: phasesError } = await supabase
     .from("phases")
     .select("id, title, phase_number, display_order")
     .order("display_order", { ascending: true });
 
-  if (!phasesRaw) return [];
+  if (phasesError) throw new Error("Could not load curriculum phases.");
+  if (!phases?.length) return [];
 
-  const phaseIds = phasesRaw.map((p) => p.id);
-  const { data: weeksRaw } = await supabase
+  const phaseIds = phases.map((p) => p.id);
+  const { data: weeks, error: weeksError } = await supabase
     .from("weeks")
     .select("id, title, week_number, phase_id, display_order")
     .in("phase_id", phaseIds)
     .order("display_order", { ascending: true });
+  if (weeksError) throw new Error("Could not load curriculum weeks.");
 
   const weeksByPhase = new Map<string, PhaseOption["weeks"]>();
-  for (const w of weeksRaw ?? []) {
+  for (const w of weeks ?? []) {
     const arr = weeksByPhase.get(w.phase_id) ?? [];
     arr.push({
       id: w.id,
@@ -49,7 +40,7 @@ export async function getPhasesAndWeeks(): Promise<PhaseOption[]> {
     weeksByPhase.set(w.phase_id, arr);
   }
 
-  return phasesRaw.map((p) => ({
+  return phases.map((p) => ({
     id: p.id,
     title: p.title,
     phase_number: p.phase_number,

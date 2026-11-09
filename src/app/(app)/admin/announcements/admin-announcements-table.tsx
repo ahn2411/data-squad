@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import { useTransition } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   MoreHorizontal,
   Loader2,
@@ -9,8 +11,9 @@ import {
   Archive,
   Trash2,
   Search,
-  Megaphone,
   Pin,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -59,21 +62,22 @@ import {
   deleteAnnouncementAction,
 } from "@/features/announcements/actions";
 import { AnnouncementForm } from "./announcement-form";
-import type { AnnouncementWithAuthor } from "@/features/announcements/queries";
-import type { PublicationStatus } from "@/types/database";
+import type { AnnouncementPage, AnnouncementStatusFilter, AnnouncementWithAuthor } from "@/features/announcements/queries";
 
 interface AdminAnnouncementsTableProps {
-  announcements: AnnouncementWithAuthor[];
+  announcementPage: AnnouncementPage;
+  searchFilter: string;
+  statusFilter: AnnouncementStatusFilter;
 }
 
-type StatusFilter = "all" | PublicationStatus;
-
 export function AdminAnnouncementsTable({
-  announcements,
+  announcementPage,
+  searchFilter,
+  statusFilter,
 }: AdminAnnouncementsTableProps) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [search, setSearch] = React.useState("");
-  const [status, setStatus] = React.useState<StatusFilter>("all");
+  const [search, setSearch] = React.useState(searchFilter);
   const [archiveTarget, setArchiveTarget] =
     React.useState<AnnouncementWithAuthor | null>(null);
   const [deleteTarget, setDeleteTarget] =
@@ -83,21 +87,19 @@ export function AdminAnnouncementsTable({
   const [editTarget, setEditTarget] =
     React.useState<AnnouncementWithAuthor | null>(null);
 
-  const filtered = React.useMemo(() => {
-    let rows = announcements;
-    if (status !== "all") {
-      rows = rows.filter((a) => a.status === status);
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      rows = rows.filter(
-        (a) =>
-          a.title.toLowerCase().includes(q) ||
-          (a.content ?? "").toLowerCase().includes(q),
-      );
-    }
-    return rows;
-  }, [announcements, search, status]);
+  const { announcements, totalCount, page, pageSize } = announcementPage;
+  const updateQuery = React.useCallback((next: { search?: string; status?: AnnouncementStatusFilter; page?: number }) => {
+    const params = new URLSearchParams();
+    if (next.search) params.set("q", next.search);
+    if (next.status && next.status !== "all") params.set("status", next.status);
+    if (next.page && next.page > 1) params.set("page", String(next.page));
+    router.replace(params.size ? `/admin/announcements?${params.toString()}` : "/admin/announcements", { scroll: false });
+  }, [router]);
+  React.useEffect(() => {
+    if (search.trim() === searchFilter) return;
+    const timer = window.setTimeout(() => updateQuery({ search: search.trim() || undefined, status: statusFilter }), 350);
+    return () => window.clearTimeout(timer);
+  }, [search, searchFilter, statusFilter, updateQuery]);
 
   const handleArchive = () => {
     if (!archiveTarget) return;
@@ -129,20 +131,6 @@ export function AdminAnnouncementsTable({
     });
   };
 
-  if (announcements.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-10 text-center">
-        <Megaphone className="size-6 text-muted-foreground" />
-        <p className="mt-2 text-[14px] font-medium text-foreground">
-          No announcements yet
-        </p>
-        <p className="mt-1 text-[12px] text-muted-foreground">
-          Post your first announcement to keep the squad in the loop.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <>
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -157,7 +145,7 @@ export function AdminAnnouncementsTable({
               aria-label="Search announcements"
             />
           </div>
-          <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
+          <Select value={statusFilter} onValueChange={(v) => updateQuery({ search: searchFilter || undefined, status: v as AnnouncementStatusFilter })}>
             <SelectTrigger size="sm" className="h-9 w-[140px]" aria-label="Filter by status">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -171,9 +159,9 @@ export function AdminAnnouncementsTable({
         </div>
         <span className="text-[12px] text-muted-foreground">
           <span className="nums font-medium text-foreground">
-            {filtered.length}
+            {totalCount}
           </span>{" "}
-          {filtered.length === 1 ? "announcement" : "announcements"}
+          {totalCount === 1 ? "announcement" : "announcements"}
         </span>
       </div>
 
@@ -189,17 +177,17 @@ export function AdminAnnouncementsTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {announcements.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={5} className="py-8 text-center">
                   <p className="text-[13px] text-muted-foreground">
-                    No announcements match these filters.
+                    {totalCount === 0 && !searchFilter && statusFilter === "all" ? "No announcements yet. Post your first announcement to keep the squad in the loop." : "No announcements match these filters."}
                   </p>
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((row) => {
-                const name = row.author?.full_name ?? row.author?.email ?? "Member";
+              announcements.map((row) => {
+                const name = row.author?.full_name ?? "Member";
                 return (
                   <TableRow key={row.id} className="group">
                     <TableCell className="min-w-[280px]">
@@ -297,6 +285,18 @@ export function AdminAnnouncementsTable({
         </Table>
       </div>
 
+      <div className="flex items-center justify-between text-[12px] text-muted-foreground">
+        <span>Page {page} of {Math.max(1, Math.ceil(totalCount / pageSize))}</span>
+        <span className="flex gap-2">
+          {page > 1 ? (
+            <Button asChild size="sm" variant="outline"><Link href={adminAnnouncementsHref(searchFilter, statusFilter, page - 1)}><ChevronLeft className="size-4" />Previous</Link></Button>
+          ) : <Button size="sm" variant="outline" disabled><ChevronLeft className="size-4" />Previous</Button>}
+          {page * pageSize < totalCount ? (
+            <Button asChild size="sm" variant="outline"><Link href={adminAnnouncementsHref(searchFilter, statusFilter, page + 1)}>Next<ChevronRight className="size-4" /></Link></Button>
+          ) : <Button size="sm" variant="outline" disabled>Next<ChevronRight className="size-4" /></Button>}
+        </span>
+      </div>
+
       {/* Edit dialog */}
       {editTarget ? (
         <AnnouncementForm
@@ -380,4 +380,12 @@ export function AdminAnnouncementsTable({
       </AlertDialog>
     </>
   );
+}
+
+function adminAnnouncementsHref(search: string, status: AnnouncementStatusFilter, page: number) {
+  const params = new URLSearchParams();
+  if (search) params.set("q", search);
+  if (status !== "all") params.set("status", status);
+  if (page > 1) params.set("page", String(page));
+  return `/admin/announcements${params.size ? `?${params.toString()}` : ""}`;
 }

@@ -1,6 +1,16 @@
 # Security
 
-The security reference for the Phase 1 + Phase 2 build. The migration (`supabase/migrations/0001_initial_schema.sql`) is the source of truth for every policy listed here.
+> **Current status:** This document began as a Phase 1/2 security reference. The application now has migrations through `0028_curriculum_topic_exercises.sql`. Treat the historical per-policy catalog below as incomplete; current SQL migrations are authoritative. RLS and column grants have not yet been exercised with separate test accounts during this audit. Migrations 0008–0028 have not been applied to production as part of this work.
+
+The scheduled reminder route is excluded from user-session middleware and requires an exact `Authorization: Bearer <CRON_SECRET>` match before creating any privileged Supabase client. Keep `CRON_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` server-only in Vercel settings. The route only selects active team members and uses a database unique key to make repeated job invocations idempotent; its live authorization and data-scope behavior still need runtime tests.
+
+`/auth/callback` is intentionally public so Supabase can exchange an unauthenticated one-time PKCE code before a session exists. The callback validates its post-authentication `next` path and only exchanges the code through Supabase Auth. The proxy also forwards legacy root URLs containing an auth code to this handler before the protected-route gate runs. Keep the production Supabase Site URL and redirect allowlist pointed at the Vercel origin.
+
+The SQL migration history is the source of truth for policies listed here. Migration 0024 pins `pg_catalog, public, pg_temp` for all `SECURITY DEFINER` routines in `public`, keeping built-ins first, application objects explicitly schema-scoped, and temporary objects last. Migration 0025 restricts review history to inserts, serializes review decisions on each submission, and enforces reviewability and score bounds in the database. Apply and inspect these migrations in a disposable project before production rollout; future definer functions should use an equally pinned path.
+
+Notification destinations are database values and are treated as untrusted at navigation time. `safeInternalPath` rejects non-rooted, protocol-relative, backslash, and control-character paths before rendering links or calling `router.push`; the installed Next.js guidance specifically warns against sending unsanitized values to router navigation. Keep the same validation on any future database-backed navigation link.
+
+Weekly reports are member-owned. Migration 0020 permits member edits for seven days after the latest save, sets submission timestamps in the database, and removes the member delete policy. Leaders/admins may update only `leader_feedback`; they cannot update member report content through the normal app policy. Activity-log rows are created by security-definer triggers, contain operation/status metadata only, and can be read only by team leaders/admins under the existing team-scoped RLS policy.
 
 ## Core principle
 
@@ -19,7 +29,7 @@ Only two values are safe for the browser and are prefixed `NEXT_PUBLIC_`:
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | All three Supabase clients. | Yes |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | All three Supabase clients (the anon/publishable key). | Yes |
-| `SUPABASE_SERVICE_ROLE_KEY` | Privileged server paths only — never imported into browser code, never re-exported from `src/lib/supabase/configured.ts`. Read directly from `process.env` where needed. RLS still applies when the publishable key is used; the service-role key bypasses RLS and is reserved for one-off bootstrap operations. | No |
+| `SUPABASE_SERVICE_ROLE_KEY` | Privileged server paths only — isolated in `src/lib/supabase/admin.ts` and used by Auth Admin invite operations. It bypasses RLS and must never enter browser code. | No |
 | `NEXT_PUBLIC_SITE_URL` | Auth email redirect base URL. | Yes |
 
 `src/lib/supabase/configured.ts` deliberately exposes only `url` and `anonKey`. The service-role key has no central accessor — it must be read from `process.env` in the specific server path that needs it, which keeps it out of accidental client bundles.
@@ -48,11 +58,15 @@ The policies below are the exact ones from 0001.
 
 | Policy | Op | `using` | `with check` | Plain English |
 |---|---|---|---|---|
-| `profiles_select` | SELECT | `id = auth.uid()` OR (an active team member reading another active member's profile, via a self-join on `team_members`) | — | A user always reads their own profile. Active members can read other active members' profiles (the team directory). |
+| `profiles_select` | SELECT | `id = auth.uid()` OR (an active team member reading another active member's profile, via a self-join on `team_members`) | — | A user always reads their own profile. Active members can read other active members' profile rows. Column grants in migration 0027 independently limit accessible fields. |
 | `profiles_self_update` | UPDATE | `id = auth.uid()` | `id = auth.uid()` | A user may update only their own row, and the row must still be theirs after the update (prevents swapping the id). |
 | `profiles_no_direct_insert` | INSERT | — | `false` | Direct inserts are blocked. Profiles are created only by the `handle_new_user` trigger. |
 
 Note: `profiles` has no DELETE policy. The cascade from `auth.users` handles deletion; there is no client-initiated delete path.
+
+### Profile email/timezone source mitigation (database verification pending)
+
+PostgreSQL RLS filters rows, not columns. Migration 0027 addresses that gap by revoking table-level profile grants, granting explicit columns that exclude email and timezone, and exposing only the caller's own timezone through a restricted security-definer function. Profile joins and search queries no longer request email. The migration is prepared but unapplied; until it is run and direct authenticated PostgREST checks confirm email/timezone denial and owner-only timezone access, production privacy remains unverified.
 
 ### `team_members`
 
@@ -92,7 +106,7 @@ The app also guards `.neq("user_id", admin.adminId)` on `suspendMemberAction`, `
 
 ## Profile updates cannot escalate privileges
 
-`profiles_self_update` allows only `id = auth.uid()`. Role, email, and membership are not columns on `profiles` — they live on `team_members`. So even a successful profile update can change only `full_name`, `username`, `avatar_url`, `bio`, `github_username`, `github_profile_url`, and `timezone`. The Server Action `updateProfileAction` (`src/features/profile/actions.ts`) further restricts the editable set and rejects duplicate usernames (Postgres error code `23505`).
+`profiles_self_update` allows only `id = auth.uid()`. Role and membership live on `team_members`, not `profiles`; email is stored on `profiles` but is excluded from authenticated column grants by migration 0027. The Server Action `updateProfileAction` (`src/features/profile/actions.ts`) limits the editable set to `full_name`, `username`, `avatar_url`, `bio`, `github_username`, `github_profile_url`, `capstone_repository_url`, and `timezone`, and rejects duplicate usernames (Postgres error code `23505`). Database column grants still need direct verification; do not rely on the Server Action as the only access control.
 
 ## How to test a denied RLS action
 
@@ -154,12 +168,11 @@ These recipes assume you have at least one admin and one regular `member` in the
 
 ## Storage
 
-Storage is **not implemented in Phase 2**. Avatar uploads and submission file uploads arrive in later phases. The planned bucket policy from the spec (D7):
+Migration `0008_private_storage.sql` defines two private buckets. Profile avatar upload uses `squad-avatars`; allowed types are JPEG, PNG and WebP, with a 5 MB limit. `squad-attachments` allows a restricted document/image/archive MIME list with a 10 MB limit. Member submissions use `<team>/<member>/<submission>/<filename>`; assignment resources use `<team>/<manager>/assignments/<assignment>/<filename>`. Assignment reads additionally require `can_access_assignment`; only active leaders/admins can upload or remove assignment resources. Both buckets remain private. Migration 0011 adds assignment file metadata and narrows the assignment-specific Storage policy branch.
 
-- `avatars` bucket: max 2 MB per file; allowed MIME `image/jpeg`, `image/png`, `image/webp`; public read, owner write. The URL is stored in `profiles.avatar_url`.
-- `submissions` bucket: max 25 MB per file; allowed MIME whitelist (pdf, plain text, markdown, common image types, csv, json, zip, Jupyter notebook); private — signed URLs only.
+Profile, submission, assignment and blocker upload flows check MIME and size in the client; server actions verify object paths and compare Storage metadata before recording database metadata. These checks do not sniff file bytes. Magic-byte validation and end-to-end Storage policy tests remain outstanding. Review and test migrations 0008, 0011, 0012 and 0014 on a non-production Supabase project before production rollout. Migration 0013 additionally enforces configured topic completion criteria at the database boundary.
 
-Server-side MIME validation should use both `Content-Type` and magic-byte sniffing where feasible; client-side pre-checks are UX only and not a security boundary (FR-SEC.5, FR-SEC.6).
+Storage limits and allowed MIME types are declared by migration 0008. Client and uploaded-object metadata checks are defense-in-depth, but neither proves the uploaded bytes match the claimed MIME type. Add byte-signature validation before allowing higher-risk file formats (FR-SEC.5, FR-SEC.6).
 
 ## Related requirements
 
@@ -169,7 +182,7 @@ Server-side MIME validation should use both `Content-Type` and magic-byte sniffi
 | FR-SEC.2 Publishable key in browser; service-role key server-only | See Key management above. |
 | FR-SEC.3 Never trust client user IDs; use `auth.uid()` | Every policy and every helper function. |
 | FR-SEC.4 Users cannot self-assign admin role | `team_members_admin_write` + `is_team_admin_of`. |
-| FR-SEC.5/FR-SEC.6 Upload validation and private buckets | Not yet implemented — planned for the Storage phases (see [DEVELOPMENT_ROADMAP.md](./DEVELOPMENT_ROADMAP.md)). |
-| FR-SEC.7 Activity logs contain no secrets | Activity logs are not yet implemented; the rule will apply when they are added. |
+| FR-SEC.5/FR-SEC.6 Upload validation and private buckets | Partial: private buckets/policies and profile, submission, assignment, and blocker attachment flows exist; byte-level validation and runtime policy tests remain. |
+| FR-SEC.7 Activity logs contain no secrets | Migration 0019 records operation/status metadata only; it excludes report contents, comments, feedback, and credentials. |
 | FR-A.8 Registration alone does not grant access | The membership gate above. |
 | FR-A.10 Service-role key never in client code | See Key management above. |

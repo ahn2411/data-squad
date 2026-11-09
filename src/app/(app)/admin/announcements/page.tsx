@@ -5,12 +5,16 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
   getAdminAnnouncements,
-  type AnnouncementWithAuthor,
+  type AnnouncementStatusFilter,
 } from "@/features/announcements/queries";
 import { AdminAnnouncementsTable } from "./admin-announcements-table";
 import { AnnouncementForm } from "./announcement-form";
 
-export default async function AdminAnnouncementsPage() {
+interface PageProps {
+  searchParams: Promise<{ q?: string; status?: string; page?: string }>;
+}
+
+export default async function AdminAnnouncementsPage({ searchParams }: PageProps) {
   const session = await requireActiveMember();
   if (
     session.membership.role !== "admin" &&
@@ -19,10 +23,18 @@ export default async function AdminAnnouncementsPage() {
     redirect("/dashboard");
   }
 
-  let announcements: AnnouncementWithAuthor[] = [];
+  const params = await searchParams;
+  const search = typeof params.q === "string" ? params.q.slice(0, 100) : "";
+  const status = ["draft", "published", "archived"].includes(params.status ?? "")
+    ? params.status as AnnouncementStatusFilter
+    : "all";
+  const page = typeof params.page === "string" && /^\d+$/.test(params.page) ? Number(params.page) : 1;
+  let result: Awaited<ReturnType<typeof getAdminAnnouncements>> = {
+    announcements: [], totalCount: 0, page: 1, pageSize: 20,
+  };
   let loadError: string | null = null;
   try {
-    announcements = await getAdminAnnouncements();
+    result = await getAdminAnnouncements({ search, status, page });
   } catch {
     loadError = "Could not load announcements.";
   }
@@ -53,7 +65,7 @@ export default async function AdminAnnouncementsPage() {
           </span>
         </div>
       ) : (
-        <AdminAnnouncementsTable announcements={announcements} />
+        <AdminAnnouncementsTable key={`${search}:${status}`} announcementPage={result} searchFilter={search} statusFilter={status} />
       )}
     </>
   );

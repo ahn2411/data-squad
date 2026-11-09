@@ -56,7 +56,7 @@ export function ReviewQueueTable({ items }: ReviewQueueTableProps) {
         <TableBody>
           {items.map((s) => {
             const a = s.assignments;
-            const name = s.profiles?.full_name ?? s.profiles?.email ?? "Member";
+            const name = s.profiles?.full_name ?? "Member";
             return (
               <TableRow key={s.id} className="group">
                 <TableCell>

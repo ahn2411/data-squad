@@ -6,7 +6,6 @@ import type {
   Blocker,
   BlockerPriority,
   BlockerStatus,
-  NotificationType,
   PublicationStatus,
   Review,
   SubmissionStatus,
@@ -118,7 +117,6 @@ export interface MemberProgressRow {
   userId: string;
   memberId: string;
   name: string;
-  email: string;
   role: TeamRole;
   topicsCompleted: number;
   assignmentsApproved: number;
@@ -128,7 +126,6 @@ export interface MemberProgressRow {
 
 export interface AdminActivityItem {
   id: string;
-  kind: "notification" | "submission";
   title: string;
   body: string | null;
   createdAt: string;
@@ -240,7 +237,7 @@ interface RawAnnouncementWithAuthor {
   content: string | null;
   pinned: boolean;
   published_at: string | null;
-  profiles: { full_name: string | null; email: string } | null;
+  profiles: { full_name: string | null } | null;
 }
 
 interface RawTopicProgressRow {
@@ -258,7 +255,6 @@ interface RawMemberWithProfile {
   profiles: {
     id: string;
     full_name: string | null;
-    email: string;
   } | null;
 }
 
@@ -269,7 +265,7 @@ interface RawSubmissionForActivity {
   updated_at: string;
   is_late: boolean | null;
   assignments: { id: string; title: string } | null;
-  profiles: { full_name: string | null; email: string } | null;
+  profiles: { full_name: string | null } | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -283,6 +279,14 @@ function safeRatio(numerator: number, denominator: number): number {
   const r = numerator / denominator;
   if (!Number.isFinite(r)) return 0;
   return Math.min(Math.max(r, 0), 1);
+}
+
+function requireSuccessfulReads(
+  results: readonly { error: unknown }[],
+): void {
+  if (results.some((result) => result.error !== null)) {
+    throw new Error("Could not load dashboard data.");
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -358,7 +362,7 @@ export async function getMemberDashboardData(
     supabase
       .from("announcements")
       .select(
-        "id, title, content, pinned, published_at, profiles(full_name, email)",
+        "id, title, content, pinned, published_at, profiles(full_name)",
       )
       .eq("team_id", teamId)
       .eq("status", "published")
@@ -376,6 +380,19 @@ export async function getMemberDashboardData(
       )
       .eq("user_id", userId)
       .order("submitted_at", { ascending: false }),
+  ]);
+
+  requireSuccessfulReads([
+    settingsRes,
+    currentWeekRes,
+    topicsRes,
+    assignmentsRes,
+    userSubsRes,
+    userProgressRes,
+    blockersRes,
+    announcementsRes,
+    notifRes,
+    weeklyReportsRes,
   ]);
 
   // ── current week + phase ──
@@ -586,7 +603,7 @@ export async function getMemberDashboardData(
       content: a.content,
       pinned: a.pinned,
       published_at: a.published_at,
-      author_name: a.profiles?.full_name ?? a.profiles?.email ?? "Team",
+      author_name: a.profiles?.full_name ?? "Team",
     }));
 
   // ── notifications ──
@@ -681,6 +698,14 @@ export async function getIndividualProgress(
         .eq("user_id", userId),
     ]);
 
+  requireSuccessfulReads([
+    topicsRes,
+    progressRes,
+    subsRes,
+    assignmentsRes,
+    reportsRes,
+  ]);
+
   const totalTopics = (topicsRes.data ?? []).length;
   const progressRows = (progressRes.data ?? []) as Array<{
     topic_id: string;
@@ -754,6 +779,8 @@ export async function getTeamProgress(teamId: string): Promise<number> {
       .eq("status", "completed"),
   ]);
 
+  requireSuccessfulReads([membersRes, topicsRes, progressRes]);
+
   const members = (membersRes.data ?? []) as Array<{ user_id: string }>;
   const totalTopics = (topicsRes.data ?? []).length;
   if (members.length === 0 || totalTopics === 0) return 0;
@@ -780,7 +807,6 @@ export async function getTeamProgress(teamId: string): Promise<number> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getAdminDashboardData(
-  adminUserId: string,
   teamId: string,
 ): Promise<AdminDashboardData> {
   const supabase = await createSupabaseServerClient();
@@ -795,13 +821,13 @@ export async function getAdminDashboardData(
     topicsRes,
     progressRes,
     reportsRes,
-    notifRes,
+    activityRes,
     recentSubsRes,
   ] = await Promise.all([
     supabase
       .from("team_members")
       .select(
-        "id, user_id, role, membership_status, profiles(id, full_name, email)",
+        "id, user_id, role, membership_status, profiles(id, full_name)",
       )
       .eq("team_id", teamId)
       .order("created_at", { ascending: true }),
@@ -846,23 +872,37 @@ export async function getAdminDashboardData(
       .from("weekly_reports")
       .select("id, user_id, week_id, submitted_at")
       .eq("team_id", teamId),
-    // recent notifications for the admin user (announcement, new submission, etc.)
+    // Privacy-preserving audit events, readable by team leaders/admins through RLS.
     supabase
-      .from("notifications")
-      .select("id, type, title, body, link, created_at")
-      .eq("user_id", adminUserId)
+      .from("activity_logs")
+      .select("id, action, entity_type, entity_id, user_id, metadata, created_at, profiles(full_name)")
+      .eq("team_id", teamId)
       .order("created_at", { ascending: false })
-      .limit(10),
+      .limit(20),
     // recent submissions across the team (separate, with assignment meta) for activity feed
     supabase
       .from("submissions")
       .select(
-        "id, status, user_id, updated_at, is_late, assignments(id, title), profiles(full_name, email)",
+        "id, status, user_id, updated_at, is_late, assignments(id, title), profiles(full_name)",
       )
       .eq("team_id", teamId)
       .in("status", ["submitted", "under_review", "approved"])
       .order("updated_at", { ascending: false })
       .limit(10),
+  ]);
+
+  requireSuccessfulReads([
+    membersRes,
+    settingsRes,
+    currentWeekRes,
+    assignmentsCountRes,
+    submissionsRes,
+    blockersRes,
+    topicsRes,
+    progressRes,
+    reportsRes,
+    activityRes,
+    recentSubsRes,
   ]);
 
   // ── members ──
@@ -995,8 +1035,7 @@ export async function getAdminDashboardData(
     return {
       userId: m.user_id,
       memberId: m.id,
-      name: m.profiles?.full_name ?? m.profiles?.email ?? "Unknown",
-      email: m.profiles?.email ?? "",
+      name: m.profiles?.full_name ?? "Member",
       role: m.role,
       topicsCompleted,
       assignmentsApproved,
@@ -1028,43 +1067,31 @@ export async function getAdminDashboardData(
     currentWeekId,
   };
 
-  // ── recent activity feed (merge notifications + recent submissions) ──
-  const notifRows = (notifRes.data ?? []) as Array<{
+  // ── recent activity feed ──
+  const activityRows = (activityRes.data ?? []) as unknown as Array<{
     id: string;
-    type: NotificationType;
-    title: string;
-    body: string | null;
-    link: string | null;
+    action: string;
+    entity_type: string | null;
+    entity_id: string | null;
+    metadata: {
+      status?: string;
+      membership_status?: string;
+      publication_status?: string;
+      review_status?: string;
+    } | null;
     created_at: string;
+    profiles: { full_name: string | null } | null;
   }>;
   const recentSubsRows =
     (recentSubsRes.data ?? []) as unknown as RawSubmissionForActivity[];
 
-  const activityItems: AdminActivityItem[] = [];
-  for (const n of notifRows) {
-    activityItems.push({
-      id: `n-${n.id}`,
-      kind: "notification",
-      title: n.title,
-      body: n.body,
-      createdAt: n.created_at,
-      link: n.link,
-    });
-  }
-  for (const s of recentSubsRows) {
-    activityItems.push({
-      id: `s-${s.id}`,
-      kind: "submission",
-      title: `Submission ${submissionStatusLabel(s.status)}`,
-      body: s.assignments?.title ?? null,
-      createdAt: s.updated_at,
-      link: `/submissions/${s.id}`,
-    });
-  }
-  activityItems.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
-  const recentActivity = activityItems.slice(0, 10);
+  const recentActivity: AdminActivityItem[] = activityRows.slice(0, 10).map((event) => ({
+    id: event.id,
+    title: activityLabel(event.action, event.metadata),
+    body: event.profiles?.full_name ?? "A team member",
+    createdAt: event.created_at,
+    link: activityLink(event.entity_type, event.entity_id),
+  }));
 
   // ── review queue: submissions awaiting review (status submitted/under_review) ──
   const reviewQueue: ReviewQueueItem[] = recentSubsRows
@@ -1076,7 +1103,7 @@ export async function getAdminDashboardData(
       assignmentId: s.assignments?.id ?? "",
       assignmentTitle: s.assignments?.title ?? "Untitled assignment",
       userId: s.user_id,
-      userName: s.profiles?.full_name ?? s.profiles?.email ?? "Unknown",
+      userName: s.profiles?.full_name ?? "Member",
       updatedAt: s.updated_at,
       isLate: s.is_late ?? false,
     }));
@@ -1098,21 +1125,58 @@ export async function getAdminDashboardData(
   };
 }
 
-function submissionStatusLabel(status: SubmissionStatus): string {
-  switch (status) {
-    case "not_started":
-      return "started";
-    case "in_progress":
-      return "in progress";
-    case "submitted":
-      return "submitted";
-    case "under_review":
-      return "under review";
-    case "revision_requested":
-      return "revision requested";
-    case "approved":
-      return "approved";
-    case "rejected":
-      return "rejected";
+function activityLabel(
+  action: string,
+  metadata: {
+    status?: string;
+    membership_status?: string;
+    publication_status?: string;
+    review_status?: string;
+  } | null,
+): string {
+  const operation = action.split(".")[1] ?? "updated";
+  const status = metadata?.status ?? metadata?.membership_status ?? metadata?.publication_status ?? metadata?.review_status;
+  const labels: Record<string, string> = {
+    "team_members.insert": status === "pending_approval" ? "Registration request received" : "Member added",
+    "team_members.update": "Membership updated",
+    "team_members.delete": "Membership removed",
+    "assignments.insert": "Assignment created",
+    "assignments.update": "Assignment updated",
+    "assignments.delete": "Assignment removed",
+    "submissions.insert": status === "submitted" ? "Assignment submitted" : "Submission created",
+    "submissions.update": status ? `Submission ${status.replaceAll("_", " ")}` : "Submission updated",
+    "submissions.delete": "Submission removed",
+    "weekly_reports.insert": "Weekly report submitted",
+    "weekly_reports.update": "Weekly report updated",
+    "weekly_reports.delete": "Weekly report removed",
+    "discussion_threads.insert": "Discussion started",
+    "discussion_threads.update": "Discussion updated",
+    "discussion_threads.delete": "Discussion removed",
+    "discussion_posts.insert": "Discussion reply posted",
+    "discussion_posts.update": "Discussion post updated",
+    "blockers.insert": "Help request opened",
+    "blockers.update": status ? `Help request ${status.replaceAll("_", " ")}` : "Help request updated",
+    "blockers.delete": "Help request removed",
+    "blocker_comments.insert": "Blocker response posted",
+    "blocker_comments.update": "Blocker response updated",
+    "announcements.insert": "Announcement created",
+    "announcements.update": "Announcement updated",
+    "announcements.delete": "Announcement removed",
+    "reviews.insert": "Submission review added",
+    "reviews.update": status ? `Review ${status.replaceAll("_", " ")}` : "Submission review updated",
+  };
+  return labels[action] ?? `${action.split(".")[0]?.replaceAll("_", " ") ?? "Team"} ${operation}`;
+}
+
+function activityLink(entityType: string | null, entityId: string | null): string | null {
+  if (!entityId) return null;
+  switch (entityType) {
+    case "submissions": return `/submissions/${entityId}`;
+    case "discussion_threads": return `/discussions/${entityId}`;
+    case "blockers": return `/blockers/${entityId}`;
+    case "announcements": return "/announcements";
+    case "team_members": return "/admin/members";
+    case "assignments": return "/admin/assignments";
+    default: return null;
   }
 }

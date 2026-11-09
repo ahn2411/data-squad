@@ -19,16 +19,36 @@ import { AdminAssignmentsTable } from "./admin-assignments-table";
 import { ReviewQueueTable } from "./review-queue-table";
 import type { ReviewQueueItem } from "@/features/submissions/queries";
 
-export default async function AdminAssignmentsPage() {
+export default async function AdminAssignmentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string; status?: string; page?: string }>;
+}) {
+  const params = await searchParams;
   const session = await requireActiveMember();
   if (session.membership.role !== "admin" && session.membership.role !== "leader") {
     redirect("/dashboard");
   }
 
+  const statuses = ["all", "draft", "published", "archived"] as const;
+  const status = statuses.includes(params.status as (typeof statuses)[number])
+    ? (params.status as (typeof statuses)[number])
+    : "all";
+  const search = (params.search ?? "").trim().slice(0, 120);
+  const requestedPage = Number(params.page);
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+
   let assignments: AdminAssignmentListItem[] = [];
+  let totalAssignmentCount = 0;
+  let currentAssignmentPage = 1;
+  let assignmentPageSize = 20;
   let loadError: string | null = null;
   try {
-    assignments = await getAdminAssignments();
+    const result = await getAdminAssignments({ status, search }, page);
+    assignments = result.assignments;
+    totalAssignmentCount = result.totalCount;
+    currentAssignmentPage = result.page;
+    assignmentPageSize = result.pageSize;
   } catch {
     loadError = "Could not load assignments.";
   }
@@ -37,7 +57,7 @@ export default async function AdminAssignmentsPage() {
   try {
     reviewQueue = await getReviewQueue();
   } catch {
-    reviewQueue = [];
+    loadError = "Could not load the submission review queue.";
   }
 
   const pendingReviewCount = reviewQueue.length;
@@ -79,7 +99,14 @@ export default async function AdminAssignmentsPage() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="assignments" className="mt-4">
-            <AdminAssignmentsTable assignments={assignments} />
+            <AdminAssignmentsTable
+              assignments={assignments}
+              totalCount={totalAssignmentCount}
+              page={currentAssignmentPage}
+              pageSize={assignmentPageSize}
+              initialSearch={search}
+              initialStatus={status}
+            />
           </TabsContent>
           <TabsContent value="reviews" className="mt-4">
             <ReviewQueueTable items={reviewQueue} />

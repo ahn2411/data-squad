@@ -30,11 +30,21 @@ export const profileSchema = z.object({
     .string()
     .max(255, "URL is too long")
     .refine(
-      (v) => v === "" || /^https?:\/\/[^\s]+$/.test(v),
-      "Enter a valid URL starting with http:// or https://",
+      (v) => v === "" || /^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/?$/.test(v),
+      "Enter a GitHub profile URL like https://github.com/username",
     )
     .optional()
     .or(z.literal("")),
+  capstoneRepositoryUrl: z
+    .string()
+    .max(255, "Repository URL is too long")
+    .refine(
+      (v) => v === "" || /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*\/?$/.test(v),
+      "Enter a GitHub repository URL like https://github.com/owner/repository",
+    )
+    .optional()
+    .or(z.literal("")),
+  avatarPath: z.string().max(300).optional().or(z.literal("")),
   timezone: z.string().min(1, "Timezone is required").max(50),
 });
 

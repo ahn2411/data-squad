@@ -30,23 +30,28 @@ export function DiscussionsFilters({
 
   // Debounce search → URL.
   React.useEffect(() => {
+    const currentQuery = searchParams?.toString() ?? "";
     const t = setTimeout(() => {
-      const sp = new URLSearchParams(searchParams?.toString() ?? "");
-      if (search.trim()) {
-        sp.set("q", search.trim());
+      const params = new URLSearchParams(currentQuery);
+      const normalizedSearch = search.trim().slice(0, 100);
+      const currentUrlSearch = params.get("q") ?? "";
+      if (normalizedSearch === currentUrlSearch) return;
+
+      if (normalizedSearch) {
+        params.set("q", normalizedSearch);
       } else {
-        sp.delete("q");
+        params.delete("q");
       }
-      const qs = sp.toString();
-      router.replace(qs ? `/discussions?${qs}` : "/discussions", {
-        scroll: false,
-      });
+      params.delete("page");
+      const qs = params.toString();
+      router.replace(qs ? `/discussions?${qs}` : "/discussions", { scroll: false });
     }, 250);
     return () => clearTimeout(t);
   }, [search, router, searchParams]);
 
   const onCategoryChange = (value: string) => {
     const sp = new URLSearchParams(searchParams?.toString() ?? "");
+    sp.delete("page");
     if (value === "all") {
       sp.delete("category");
     } else {
