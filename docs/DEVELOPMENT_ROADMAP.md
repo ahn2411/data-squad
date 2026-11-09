@@ -58,7 +58,7 @@ Apply migrations in order to the Supabase project used by the deployment. The mi
 - Apply migrations 0008–0021 to a disposable Supabase project and verify file access, RLS, status transitions, notification triggers/read states/pagination, topic/week completion checks, notification deduplication, curriculum edit/resource seeding, activity auditing, and weekly report edit locking before production rollout.
 - Configure Supabase Auth email delivery for password resets and invitation flows.
 - Add realtime notification updates if live delivery is required; currently the UI refreshes data on requests.
-- Exercise report/deadline reminders and search coverage; add activity audit writers. Reminder generation is implemented with a protected Vercel cron and database dedupe, but runtime scheduling remains unverified.
+- Exercise report/deadline reminders and search coverage; add activity audit writers. Reminder generation uses a protected endpoint, twice-daily GitHub Actions schedule and database dedupe; runtime workflow verification remains.
 - Run a production browser/accessibility review and verify the intended Vercel/Supabase deployment.
 
 ## Known scope boundaries

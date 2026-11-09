@@ -17,6 +17,8 @@ const PUBLIC_ROUTES = [
   "/auth/callback",
 ];
 
+const CRON_ROUTE = "/api/cron/reminders";
+
 function isPublicRoute(pathname: string): boolean {
   return PUBLIC_ROUTES.includes(pathname);
 }
@@ -27,6 +29,14 @@ function isPublicRoute(pathname: string): boolean {
  * render the "not configured" screen.
  */
 export async function updateSession(request: NextRequest) {
+  // The cron handler has its own bearer-token authorization. Let that handler
+  // return 401 for missing/invalid tokens instead of redirecting API callers
+  // to the interactive login page. The proxy matcher also excludes this path;
+  // this guard protects against matcher drift or a broad middleware matcher.
+  if (request.nextUrl.pathname === CRON_ROUTE) {
+    return NextResponse.next({ request });
+  }
+
   if (!isSupabaseConfigured()) {
     return NextResponse.next();
   }

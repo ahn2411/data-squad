@@ -41,7 +41,7 @@ This roadmap continues the existing application. It preserves the current produc
 - [x] Validate submission assignment IDs and surface submission/revision-history database errors without reporting partial writes as successful (failure-injection and concurrent revision tests remain pending).
 - [ ] Verify assignment attachments; exercise submission attachment uploads, signed downloads, limits, invalid files, concurrency limits, and RLS denial behavior.
 - [x] Add submission receipt, discussion reply, blocker response/status notification triggers.
-- [x] Implement deadline and missing-report reminders through a secret-protected twice-daily Vercel cron and unique dedupe keys (runtime schedule and database verification remain).
+- [x] Implement deadline and missing-report reminders through the protected endpoint, twice-daily GitHub Actions scheduling, retry handling, and unique dedupe keys (runtime workflow verification remains).
 - [x] Add notification-center pagination, global unread count, correct SQL NULL read predicates, and a matching ordering index; RLS/runtime behavior remains to be verified.
 - [x] Save assignment recipients before publish-trigger notification fan-out and add migration 0023 to restrict targeted notices to active selected recipients; database audience tests remain pending.
 - [ ] Execute/test notification trigger and reminder migrations on a disposable Supabase project.
@@ -49,7 +49,7 @@ This roadmap continues the existing application. It preserves the current produc
 ## Stage 6 — Reporting and collaboration
 
 - [x] Define a seven-day member report edit window, display its cutoff, and enforce it in migration 0020 and the server action; RLS/database runtime verification remains.
-- [x] Schedule deduplicated missing-report reminders in the existing protected cron (runtime schedule and database verification remain).
+- [x] Schedule deduplicated missing-report reminders through the shared twice-daily GitHub Actions workflow (runtime schedule and database verification remain).
 - [x] Add server-side discussion pagination with URL-preserved category/search filters; browser/database verification remains.
 - [ ] Decide whether multi-level replies or mentions are required by the current collaboration scope.
 - [x] Implement reporter close/reopen and blocker attachment workflows in source (migration 0012); disposable-project transition and file RLS tests remain.

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { cronAuthorizationFailure } from "@/lib/cron-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -30,11 +31,14 @@ function weekdayInTimezone(date: Date, timezone: string): number | null {
 }
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
+  const authFailure = cronAuthorizationFailure(
+    request.headers.get("authorization"),
+    process.env.CRON_SECRET,
+  );
+  if (authFailure === 503) {
     return NextResponse.json({ error: "Reminder job is not configured." }, { status: 503 });
   }
-  if (request.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (authFailure === 401) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 

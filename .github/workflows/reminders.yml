@@ -1,0 +1,44 @@
+name: Scheduled reminders
+
+on:
+  schedule:
+    # GitHub Actions schedules use UTC. Avoid minute 0, when scheduled jobs
+    # are more likely to be delayed by platform load.
+    - cron: "17 0,12 * * *"
+  workflow_dispatch:
+
+# This workflow only makes an HTTPS request and needs no repository token.
+permissions: {}
+
+concurrency:
+  group: scheduled-reminders
+  cancel-in-progress: false
+
+jobs:
+  deliver-reminders:
+    # Do not send the production secret from manually selected feature branches.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call the protected reminder endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${CRON_SECRET:-}" ]]; then
+            echo "::error::Configure the CRON_SECRET Actions secret before running reminders."
+            exit 1
+          fi
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --retry 3 \
+            --retry-delay 10 \
+            --retry-max-time 60 \
+            --max-time 90 \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            "https://data-squad-cyan.vercel.app/api/cron/reminders"

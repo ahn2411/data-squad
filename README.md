@@ -125,7 +125,7 @@ Email delivery is handled by Supabase Auth. Confirmation behavior depends on the
 ## Deploy to Vercel
 
 1. Push the repo to GitHub/GitLab and import it into Vercel.
-2. Add the required environment variables from `.env.example` in the Vercel project settings, including a strong `CRON_SECRET` for the scheduled reminder job.
+2. Add the required environment variables from `.env.example` in the Vercel project settings, including a strong `CRON_SECRET` for the protected reminder endpoint. Add the exact same value as a GitHub Actions repository secret named `CRON_SECRET` (Settings → Secrets and variables → Actions); the workflow in `.github/workflows/reminders.yml` calls the endpoint twice daily.
 3. Point Vercel at the intended Supabase project. Review and apply all migrations (`0001`–`0028`) using the deployment guide, without resetting the database. Apply schema changes before deploying code that depends on them.
 4. Bootstrap the first admin against the production database using `supabase/seed/bootstrap-admin.sql`, then run `supabase/seed/weekly-assignments.sql` if the team does not already have weekly assignments. This additive seed creates drafts only for weeks with no assignments.
 5. Deploy. The build uses `next build`; no special build step is required.

@@ -18,6 +18,6 @@ Postgres is the source of truth. Each migration is additive/versioned; never rew
 
 ## Production constraints
 
-Vercel hosts the app; Supabase provides Auth, database and private Storage policies. Profile avatars, submission attachments, assignment resources and blocker files are implemented in source. Auth email delivery depends on Supabase SMTP configuration and redirect allow-list. No GitHub API synchronization or scheduled job service is configured. Production database and Vercel settings must be verified in their dashboards; this repository audit does not prove which migrations have been applied.
+Vercel hosts the app; Supabase provides Auth, database and private Storage policies. Profile avatars, submission attachments, assignment resources and blocker files are implemented in source. Auth email delivery depends on Supabase SMTP configuration and redirect allow-list. GitHub Actions calls the protected reminder endpoint twice daily; no Vercel cron or separate scheduler service is used. The repository is public, so the standard GitHub-hosted runner is free. Production migrations 0008–0028 were confirmed applied on 2026-11-09; the remaining RLS and workflow behavior still requires authenticated runtime tests.
 
 For routes and the migration inventory, see [COMPLETION_AUDIT.md](./COMPLETION_AUDIT.md). For authorization, see [ROLE_PERMISSIONS.md](./ROLE_PERMISSIONS.md).
